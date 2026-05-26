@@ -284,7 +284,7 @@ function renderDashboard() {
   document.querySelector("#totalProfit").textContent = money(t.profit);
   document.querySelector("#profitRate").textContent = pct(t.profitRate);
   document.querySelector("#specRatio").textContent = pct(t.specRatio);
-  const overLimit = t.specRatio > 0.1;
+  const overLimit = t.specRatio >= 0.1;
   document.querySelector("#specStatus").textContent = overLimit ? "超10%，先停科技/个股" : "正常";
   const specCard = document.querySelector("#specRatio").closest(".metric");
   specCard.classList.toggle("alert", overLimit);
@@ -454,6 +454,11 @@ function calcAllocation(inputs) {
 
   var totalAssets = data.assets.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
   var targetSum = data.assets.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
+  var speculativeValue = data.assets.reduce(function (s, a) {
+    return a.layer === "投机层" ? s + numberValue(a.value) : s;
+  }, 0);
+  var speculativeRatio = totalAssets > 0 ? speculativeValue / totalAssets : 0;
+  var speculativePaused = speculativeRatio >= 0.10;
   var useCorrection = allocState.mode === "修正" && totalAssets > 0 && targetSum > 0;
 
   // 归一化权重
@@ -467,7 +472,9 @@ function calcAllocation(inputs) {
   norms.forEach(function (n) {
     var currentRatio = totalAssets > 0 ? numberValue(n.asset.value) / totalAssets : 0;
     var gap = currentRatio - n.normTarget;
-    if (useCorrection && gap > 0.05) {
+    if (speculativePaused && n.asset.layer === "投机层") {
+      skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "投机层超限暂停" });
+    } else if (useCorrection && gap > 0.05) {
       skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "偏高暂停" });
     } else {
       pool.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "" });
@@ -534,6 +541,8 @@ function calcAllocation(inputs) {
     totalAssets: totalAssets,
     targetSum: targetSum,
     targetMissing: targetSum <= 0,
+    speculativeRatio: speculativeRatio,
+    speculativePaused: speculativePaused,
     products: products,
     layers: layerList,
   };
@@ -610,6 +619,9 @@ function refreshAllocation() {
   } else if (result.useCorrection && result.allocatedTotal === 0 && result.investBase > 0) {
     hint.style.display = "block";
     hint.textContent = "当前配置无优先补仓项，本月建议保留现金。原始建议投资额度：" + money(result.investBase);
+  } else if (result.speculativePaused) {
+    hint.style.display = "block";
+    hint.textContent = "投机层已达到或超过 10%，本月自动暂停给投机层分配新资金。";
   } else if (result.allocatedTotal < result.investBase) {
     hint.style.display = "block";
     hint.textContent = "部分产品偏高已暂停。原始建议投资额度：" + money(result.investBase);
@@ -706,6 +718,8 @@ function saveAllocation() {
       allocatedTotal: result.allocatedTotal,
       actualRemainingCash: result.actualRemainingCash,
       remainingCash: result.cashflowAvailable - result.investBase,
+      speculativeRatio: result.speculativeRatio,
+      speculativePaused: result.speculativePaused,
     },
     allocationMode: allocState.mode,
     effectiveAllocationMode: effectiveMode,
