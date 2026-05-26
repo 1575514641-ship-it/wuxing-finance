@@ -1,0 +1,4 @@
+.server.pid
+_backups/
+*.ps1
+使用说明.md

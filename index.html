@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>五行理财</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v6</small></h1>
+        <p>少操作，多复盘，把钱留住。</p>
+      </div>
+      <div class="top-actions">
+        <span id="syncStatus" class="sync-badge">本地</span>
+        <button id="syncBtn" class="icon-btn" title="同步码管理">同步</button>
+        <button id="exportBtn" class="icon-btn" title="导出备份">导出</button>
+        <label class="icon-btn file-btn" title="导入备份">
+          导入
+          <input id="importInput" type="file" accept="application/json">
+        </label>
+      </div>
+    </header>
+
+    <main>
+      <section class="dashboard" aria-label="资产总览">
+        <article class="metric primary">
+          <span>当前总资产</span>
+          <strong id="totalAssets">¥0</strong>
+          <small id="lastUpdated">尚未更新</small>
+        </article>
+        <article class="metric">
+          <span>累计投入</span>
+          <strong id="totalCost">¥0</strong>
+          <small>本金口径</small>
+        </article>
+        <article class="metric">
+          <span>总盈亏</span>
+          <strong id="totalProfit">¥0</strong>
+          <small id="profitRate">0.0%</small>
+        </article>
+        <article class="metric warning">
+          <span>投机层占比</span>
+          <strong id="specRatio">0.0%</strong>
+          <small id="specStatus">正常</small>
+        </article>
+      </section>
+
+      <nav class="tabs" aria-label="功能切换">
+        <button class="tab active" data-view="assets">资产</button>
+        <button class="tab" data-view="allocate">分配</button>
+        <button class="tab" data-view="monthly">月度</button>
+        <button class="tab" data-view="ledger">随手记</button>
+        <button class="tab" data-view="rules">规则</button>
+      </nav>
+
+      <section id="assets" class="view active">
+        <div class="section-head">
+          <div>
+            <h2>资产持仓</h2>
+            <p>每月月底更新「当前市值」和「累计投入」。</p>
+          </div>
+          <button id="addAssetBtn" class="primary-btn">新增资产</button>
+        </div>
+        <div id="rebalanceTips" class="tips"></div>
+        <div id="assetList" class="card-list"></div>
+      </section>
+
+      <section id="allocate" class="view">
+        <div class="section-head">
+          <div>
+            <h2>月薪分配</h2>
+            <p>工资到账后，先分配，再执行。</p>
+          </div>
+        </div>
+
+        <div class="alloc-inputs">
+          <div class="alloc-field">
+            <label for="allocIncome">月收入（税后）</label>
+            <input id="allocIncome" type="text" inputmode="decimal" placeholder="0">
+          </div>
+          <div class="alloc-field">
+            <label for="allocExpense">固定支出</label>
+            <input id="allocExpense" type="text" inputmode="decimal" placeholder="0">
+          </div>
+          <div class="alloc-field">
+            <label for="allocReserve">机动预留 <small>本月不确定开销（聚餐、人情、交通等）</small></label>
+            <input id="allocReserve" type="text" inputmode="decimal" placeholder="0">
+          </div>
+          <div class="alloc-field">
+            <label for="allocSavingRate">目标储蓄率（%）</label>
+            <input id="allocSavingRate" type="text" inputmode="decimal" placeholder="35">
+          </div>
+        </div>
+
+        <div id="allocResult" class="alloc-result">
+          <div class="alloc-summary">
+            <div class="alloc-summary-row"><span>现金流可投</span><strong id="allocCashflow">¥0</strong></div>
+            <div class="alloc-summary-row"><span>目标储蓄（<span id="allocSavingPct">35</span>%）</span><strong id="allocTargetSaving">¥0</strong></div>
+            <div class="alloc-summary-row primary"><span>最终分配</span><strong id="allocFinalInvest">¥0</strong></div>
+            <div class="alloc-summary-row"><span>剩余现金</span><strong id="allocRemaining">¥0</strong></div>
+          </div>
+          <small id="allocHint" style="display:none"></small>
+        </div>
+
+        <div class="alloc-mode">
+          <button id="allocModeCorrect" class="mode-btn active">修正模式</button>
+          <button id="allocModeStandard" class="mode-btn">标准模式</button>
+          <small id="allocModeHint">修正模式会自动暂停明显偏高产品，并把本月资金转向未偏高产品。</small>
+        </div>
+
+        <div id="allocLayers" class="alloc-layers"></div>
+
+        <button id="allocSaveBtn" class="alloc-save-btn">保存为本月计划</button>
+        <p id="allocSaveMsg" class="alloc-save-msg" style="display:none"></p>
+      </section>
+
+      <section id="monthly" class="view">
+        <div class="section-head">
+          <div>
+            <h2>月度复盘</h2>
+            <p>每月只填一次，重点看储蓄率和资产变化。</p>
+          </div>
+          <button id="addMonthBtn" class="primary-btn">新增月份</button>
+        </div>
+        <div id="monthlyList" class="card-list"></div>
+      </section>
+
+      <section id="ledger" class="view">
+        <div class="section-head">
+          <div>
+            <h2>随手记录</h2>
+            <p>只记收入、投资、大额消费，不做流水奴隶。</p>
+          </div>
+          <button id="addEntryBtn" class="primary-btn">记一笔</button>
+        </div>
+        <div id="entryList" class="card-list"></div>
+      </section>
+
+      <section id="rules" class="view">
+        <div class="section-head">
+          <div>
+            <h2>理财规则</h2>
+            <p>喜金水，忌火木。规则不是束缚，是防冲动。</p>
+          </div>
+        </div>
+        <div class="rule-grid">
+          <article><b>金｜主力</b><span>黄金、债券、红利、存款。用来固财。</span></article>
+          <article><b>水｜流动</b><span>货基、短债、海外宽基、外语技能。用来降火。</span></article>
+          <article><b>土｜稳健</b><span>国债、偏债混合、宽基指数。中间层，生金。</span></article>
+          <article><b>火｜限制</b><span>科技、纳指、个股。最多 10%，亏光不补。</span></article>
+          <article><b>木｜规避</b><span>杠杆、虚拟货币、初创股权。容易放大风险。</span></article>
+          <article><b>纪律｜核心</b><span>工资到账先存后花。少操作就是多赚钱。</span></article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="editorDialog">
+    <form method="dialog" id="editorForm">
+      <header>
+        <h3 id="dialogTitle">编辑</h3>
+        <button value="cancel" class="ghost-btn" type="submit">关闭</button>
+      </header>
+      <div id="dialogFields" class="form-grid"></div>
+      <footer>
+        <button id="deleteBtn" type="button" class="danger-btn">删除</button>
+        <button value="save" type="submit" class="primary-btn">保存</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="syncDialog" class="sync-dialog">
+    <form method="dialog">
+      <header>
+        <h3>同步码</h3>
+        <button value="cancel" class="ghost-btn" type="submit">关闭</button>
+      </header>
+      <div class="sync-panel">
+        <p class="sync-note">同步码相当于这份账本的钥匙。电脑和手机使用同一个同步码，才会连接到同一份云端数据；不要发给别人。</p>
+
+        <label for="syncCodeText">本机同步码</label>
+        <textarea id="syncCodeText" rows="4" readonly></textarea>
+        <div class="sync-actions">
+          <button id="copySyncCodeBtn" type="button" class="primary-btn">复制同步码</button>
+          <button id="resetSyncCodeBtn" type="button" class="danger-btn">生成新的同步码</button>
+        </div>
+
+        <label for="importSyncCodeText">在新设备粘贴同步码</label>
+        <textarea id="importSyncCodeText" rows="4" placeholder="把电脑端复制的同步码粘贴到这里"></textarea>
+        <button id="applySyncCodeBtn" type="button" class="primary-btn">导入并同步</button>
+        <p id="syncHelp" class="sync-help">打开手机端后，粘贴电脑端同步码即可共用同一份数据。</p>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./supabase.js?v=6"></script>
+  <script>
+    // 自动配置 Supabase 云同步（个人使用，anon key 可公开）
+    supabase.setConfig(
+      "https://qzligsdeynmobiekudae.supabase.co/rest/v1/",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6bGlnc2RleW5tb2JpZWt1ZGFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MDQ3MjAsImV4cCI6MjA5NTI4MDcyMH0.xP6Q2rKhyBVhsvY0xyXzf2eXjOp-zK9kvVASZ9uNiDk"
+    );
+  </script>
+  <script src="./app.js?v=6"></script>
+</body>
+</html>
