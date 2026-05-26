@@ -1,23 +1,24 @@
 const STORAGE_KEY = "wuxing-finance-app-v1";
 const META_KEY = "wuxing-finance-meta-v1";
 
+// 22岁外派起步配置：权益重(50%) + 海外重(51%) + USD分仓，对应外派收入和10+年长期持有
+const HALF_FIRE_PLAN = [
+  ["现金层", "水", "货币基金", "RMB流动现金", 0.05],
+  ["现金层", "水", "美元货币工具", "USD流动现金", 0.05],
+  ["防御层", "金", "黄金积存/黄金ETF", "黄金类", 0.10],
+  ["防御层", "金", "红利低波指数", "红利类", 0.07],
+  ["防御层", "金", "中长期纯债基金", "债券类", 0.05],
+  ["生财层", "土", "沪深300/A500指数", "宽基指数", 0.15],
+  ["生财层", "土", "中证500指数", "中盘成长", 0.07],
+  ["成长层", "金水", "标普500", "海外宽基", 0.22],
+  ["成长层", "金水", "全球医疗/制药", "海外主题", 0.07],
+  ["成长层", "金", "黄金矿业股", "黄金弹性", 0.07],
+  ["投机层", "火", "纳斯达克100/科技主题", "科技成长", 0.05],
+  ["投机层", "火", "自选个股/行业ETF", "自选投机", 0.05],
+];
+
 const defaultData = {
-  assets: [
-    ["现金层", "水", "货币基金", "流动现金", 0.06],
-    ["现金层", "水", "同业存单指数基金", "低波固收", 0.02],
-    ["现金层", "水", "短债基金", "低波固收", 0.02],
-    ["防御层", "金", "黄金积存/黄金ETF", "黄金类", 0.15],
-    ["防御层", "金", "红利低波指数", "红利类", 0.10],
-    ["防御层", "金", "中长期纯债基金", "债券类", 0.10],
-    ["生财层", "土", "偏债混合基金", "稳健增值", 0.10],
-    ["生财层", "土", "沪深300/A500指数", "宽基指数", 0.10],
-    ["生财层", "土", "储蓄国债/大额存单", "安全底仓", 0.05],
-    ["成长层", "金水", "标普500", "海外宽基", 0.10],
-    ["成长层", "金水", "全球医疗/制药", "海外主题", 0.05],
-    ["成长层", "金", "黄金矿业股", "黄金弹性", 0.05],
-    ["投机层", "火", "纳斯达克100/科技主题", "科技成长", 0.05],
-    ["投机层", "火", "自选个股/行业ETF", "自选投机", 0.05],
-  ].map((row, idx) => ({
+  assets: HALF_FIRE_PLAN.map((row) => ({
     id: crypto.randomUUID(),
     layer: row[0],
     element: row[1],
@@ -27,7 +28,7 @@ const defaultData = {
     value: 0,
     cost: 0,
     updated: "",
-    note: idx === 12 ? "投机层合计不超过10%" : "",
+    note: row[0] === "投机层" && row[2].startsWith("纳斯达克") ? "投机层合计不超过10%；单只+50%卖一半，-30%不补不卖" : "",
   })),
   monthly: makeDefaultMonths(),
   entries: [],
@@ -899,6 +900,47 @@ document.querySelectorAll(".tab").forEach((btn) => {
 document.querySelector("#addAssetBtn").addEventListener("click", () => openAssetEditor());
 document.querySelector("#addMonthBtn").addEventListener("click", () => openMonthEditor());
 document.querySelector("#addEntryBtn").addEventListener("click", () => openEntryEditor());
+
+document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
+  if (!confirm("套用22岁外派配置：按新方案更新14项资产的目标占比和层级。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n\n确定继续吗？")) return;
+  var byName = {};
+  data.assets.forEach(function (a) { byName[a.name] = a; });
+  var nextAssets = [];
+  HALF_FIRE_PLAN.forEach(function (row) {
+    var existing = byName[row[2]];
+    if (existing) {
+      nextAssets.push(Object.assign({}, existing, {
+        layer: row[0],
+        element: row[1],
+        type: row[3],
+        target: row[4],
+      }));
+      delete byName[row[2]];
+    } else {
+      nextAssets.push({
+        id: crypto.randomUUID(),
+        layer: row[0],
+        element: row[1],
+        name: row[2],
+        type: row[3],
+        target: row[4],
+        value: 0,
+        cost: 0,
+        updated: "",
+        note: "",
+      });
+    }
+  });
+  // 旧方案有但新方案没有的产品：保留但目标占比设为0
+  Object.keys(byName).forEach(function (name) {
+    var orphan = byName[name];
+    nextAssets.push(Object.assign({}, orphan, { target: 0, note: (orphan.note ? orphan.note + "｜" : "") + "已不在新方案，建议清仓后删除" }));
+  });
+  data.assets = nextAssets;
+  saveData();
+  render();
+  alert("新配置已套用。建议去「资产」Tab 检查每项的层级和目标占比，确认无误后开始按新比例补仓。");
+});
 
 function refreshSyncDialog() {
   const codeEl = document.querySelector("#syncCodeText");
