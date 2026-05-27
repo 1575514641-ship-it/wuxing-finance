@@ -2,33 +2,37 @@ const STORAGE_KEY = "wuxing-finance-app-v1";
 const META_KEY = "wuxing-finance-meta-v1";
 
 // 22岁外派起步配置：权益重(50%) + 海外重(51%) + USD分仓，对应外派收入和10+年长期持有
+// status: "available" 国内可买；"buffered" 国内阶段暂存到 bufferDestination 指向的产品（按 name 匹配）
+const BUFFER_DEFAULT = "货币基金"; // RMB 货基作为缺省暂存去向
 const HALF_FIRE_PLAN = [
-  ["现金层", "水", "货币基金", "RMB流动现金", 0.05],
-  ["现金层", "水", "美元货币工具", "USD流动现金", 0.05],
-  ["防御层", "金", "黄金积存/黄金ETF", "黄金类", 0.10],
-  ["防御层", "金", "红利低波指数", "红利类", 0.07],
-  ["防御层", "金", "中长期纯债基金", "债券类", 0.05],
-  ["生财层", "土", "沪深300/A500指数", "宽基指数", 0.15],
-  ["生财层", "土", "中证500指数", "中盘成长", 0.07],
-  ["成长层", "金水", "标普500", "海外宽基", 0.22],
-  ["成长层", "金水", "全球医疗/制药", "海外主题", 0.07],
-  ["成长层", "金", "黄金矿业股", "黄金弹性", 0.07],
-  ["投机层", "火", "纳斯达克100/科技主题", "科技成长", 0.05],
-  ["投机层", "火", "自选个股/行业ETF", "自选投机", 0.05],
+  { layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.05, status: "available" },
+  { layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "available" },
+  { layer: "防御层", element: "金", name: "黄金积存/黄金ETF", type: "黄金类", target: 0.10, status: "available" },
+  { layer: "防御层", element: "金", name: "红利低波指数", type: "红利类", target: 0.07, status: "available" },
+  { layer: "防御层", element: "金", name: "中长期纯债基金", type: "债券类", target: 0.05, status: "available" },
+  { layer: "生财层", element: "土", name: "沪深300/A500指数", type: "宽基指数", target: 0.15, status: "available" },
+  { layer: "生财层", element: "土", name: "中证500指数", type: "中盘成长", target: 0.07, status: "available" },
+  { layer: "成长层", element: "金水", name: "标普500", type: "海外宽基", target: 0.22, status: "buffered", bufferDestination: BUFFER_DEFAULT },
+  { layer: "成长层", element: "金水", name: "全球医疗/制药", type: "海外主题", target: 0.07, status: "buffered", bufferDestination: BUFFER_DEFAULT },
+  { layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.07, status: "buffered", bufferDestination: BUFFER_DEFAULT },
+  { layer: "投机层", element: "火", name: "纳斯达克100/科技主题", type: "科技成长", target: 0.05, status: "buffered", bufferDestination: BUFFER_DEFAULT },
+  { layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "buffered", bufferDestination: BUFFER_DEFAULT },
 ];
 
 const defaultData = {
   assets: HALF_FIRE_PLAN.map((row) => ({
     id: crypto.randomUUID(),
-    layer: row[0],
-    element: row[1],
-    name: row[2],
-    type: row[3],
-    target: row[4],
+    layer: row.layer,
+    element: row.element,
+    name: row.name,
+    type: row.type,
+    target: row.target,
+    status: row.status,
+    bufferDestination: row.bufferDestination || "",
     value: 0,
     cost: 0,
     updated: "",
-    note: row[0] === "投机层" && row[2].startsWith("纳斯达克") ? "投机层合计不超过10%；单只+50%卖一半，-30%不补不卖" : "",
+    note: row.layer === "投机层" && row.name.startsWith("纳斯达克") ? "投机层合计不超过10%；单只+50%卖一半，-30%不补不卖" : "",
   })),
   monthly: makeDefaultMonths(),
   entries: [],
@@ -107,8 +111,16 @@ function loadData() {
 function normalizeData(input) {
   const fallback = structuredClone(defaultData);
   const source = input && typeof input === "object" ? input : {};
+  const assets = Array.isArray(source.assets) ? source.assets : fallback.assets;
+  // 兼容老数据：缺 status / bufferDestination 时回填默认值
+  assets.forEach((a) => {
+    if (a && typeof a === "object") {
+      if (typeof a.status === "undefined") a.status = "available";
+      if (typeof a.bufferDestination === "undefined") a.bufferDestination = "";
+    }
+  });
   return {
-    assets: Array.isArray(source.assets) ? source.assets : fallback.assets,
+    assets,
     monthly: Array.isArray(source.monthly) ? source.monthly : fallback.monthly,
     entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
   };
@@ -285,7 +297,7 @@ function renderDashboard() {
   document.querySelector("#profitRate").textContent = pct(t.profitRate);
   document.querySelector("#specRatio").textContent = pct(t.specRatio);
   const overLimit = t.specRatio >= 0.1;
-  document.querySelector("#specStatus").textContent = overLimit ? "超10%，先停科技/个股" : "正常";
+  document.querySelector("#specStatus").textContent = overLimit ? "达10%，暂停科技/个股" : "正常";
   const specCard = document.querySelector("#specRatio").closest(".metric");
   specCard.classList.toggle("alert", overLimit);
   document.querySelector("#lastUpdated").textContent = t.last ? `最近更新：${t.last}` : "尚未更新";
@@ -300,12 +312,16 @@ function renderAssets() {
     const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
     const status = ratio - numberValue(item.target);
     const statusText = status > 0.05 ? "偏高：暂停/少投" : status < -0.05 ? "偏低：优先补" : "正常";
+    const isBuffered = item.status === "buffered";
+    const bufferBadge = isBuffered
+      ? '<i class="badge fire">暂存→' + esc(item.bufferDestination || "货币基金") + "</i> "
+      : "";
     const card = document.createElement("article");
-    card.className = "card";
+    card.className = "card" + (isBuffered ? " buffered" : "");
     card.innerHTML = `
       <div class="card-title">
         <b>${esc(item.name)}</b>
-        <span><i class="badge ${layerClass(item.element)}">${esc(item.layer)}｜${esc(item.element)}</i> ${esc(item.type)}</span>
+        <span>${bufferBadge}<i class="badge ${layerClass(item.element)}">${esc(item.layer)}｜${esc(item.element)}</i> ${esc(item.type)}</span>
       </div>
       <div class="num"><span class="mini-label">当前市值</span><b>${money(item.value)}</b></div>
       <div class="num"><span class="mini-label">累计投入</span><b>${money(item.cost)}</b></div>
@@ -466,13 +482,16 @@ function calcAllocation(inputs) {
     return { asset: a, normTarget: targetSum > 0 ? numberValue(a.target) / targetSum : 0 };
   });
 
-  // 修正模式：标记偏高产品
+  // 第一遍：按 status 分流
   var pool = [];
   var skipped = [];
+  var bufferedList = []; // status === "buffered" 的产品，单独算重定向
   norms.forEach(function (n) {
     var currentRatio = totalAssets > 0 ? numberValue(n.asset.value) / totalAssets : 0;
     var gap = currentRatio - n.normTarget;
-    if (speculativePaused && n.asset.layer === "投机层") {
+    if (n.asset.status === "buffered") {
+      bufferedList.push({ asset: n.asset, normTarget: n.normTarget, gap: gap });
+    } else if (speculativePaused && n.asset.layer === "投机层") {
       skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "投机层超限暂停" });
     } else if (useCorrection && gap > 0.05) {
       skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "偏高暂停" });
@@ -481,36 +500,83 @@ function calcAllocation(inputs) {
     }
   });
 
-  // 可投池权重
+  // 计算 buffered 应得总额（按它们的归一化权重，从 investBase 中预扣）
+  var bufferedNormSum = bufferedList.reduce(function (s, b) { return s + b.normTarget; }, 0);
+  var bufferedAllocTotal = Math.min(Math.round(investBase * bufferedNormSum), investBase);
+  var poolInvestBase = investBase - bufferedAllocTotal;
+
+  // 可投池权重（pool 内部按 poolWeightSum 分 poolInvestBase）
   var poolWeightSum = pool.reduce(function (s, p) { return s + p.normTarget; }, 0);
   var allocatedTotal = 0;
   var products = [];
 
   if (pool.length === 0 || poolWeightSum === 0) {
-    // 全部偏高或无目标
-    allocatedTotal = 0;
     pool.forEach(function (p) {
-      products.push({ asset: p.asset, normTarget: p.normTarget, amount: 0, skipped: false, reason: "" });
-    });
-    skipped.forEach(function (s) {
-      products.push({ asset: s.asset, normTarget: s.normTarget, amount: 0, skipped: true, reason: s.reason });
+      products.push({ asset: p.asset, normTarget: p.normTarget, amount: 0, skipped: false, reason: "", bufferIncoming: 0 });
     });
   } else {
-    // 分配金额（最后一个兜底尾差）
     var allocatedSum = 0;
     for (var i = 0; i < pool.length; i++) {
       var isLast = i === pool.length - 1;
-      var raw = isLast ? investBase - allocatedSum : Math.round(investBase * pool[i].normTarget / poolWeightSum);
-      var remaining = Math.max(investBase - allocatedSum, 0);
+      var raw = isLast ? poolInvestBase - allocatedSum : Math.round(poolInvestBase * pool[i].normTarget / poolWeightSum);
+      var remaining = Math.max(poolInvestBase - allocatedSum, 0);
       var amt = isLast ? remaining : Math.min(Math.max(raw, 0), remaining);
       allocatedSum += amt;
-      products.push({ asset: pool[i].asset, normTarget: pool[i].normTarget, amount: amt, skipped: false, reason: "" });
+      products.push({ asset: pool[i].asset, normTarget: pool[i].normTarget, amount: amt, skipped: false, reason: "", bufferIncoming: 0 });
     }
-    skipped.forEach(function (s) {
-      products.push({ asset: s.asset, normTarget: s.normTarget, amount: 0, skipped: true, reason: s.reason });
-    });
     allocatedTotal = allocatedSum;
   }
+
+  // 处理 buffered：每只算自己应得的金额，redirect 到 destination
+  var bufferedAllocSum = 0;
+  bufferedList.forEach(function (b, idx) {
+    var isLast = idx === bufferedList.length - 1;
+    var raw = isLast
+      ? bufferedAllocTotal - bufferedAllocSum
+      : (bufferedNormSum > 0 ? Math.round(bufferedAllocTotal * b.normTarget / bufferedNormSum) : 0);
+    var remaining = Math.max(bufferedAllocTotal - bufferedAllocSum, 0);
+    var amt = isLast ? remaining : Math.min(Math.max(raw, 0), remaining);
+    bufferedAllocSum += amt;
+
+    // 解析 destination：name 匹配，且 destination 必须是 available 的产品（防循环 / 防去向消失）
+    var destName = b.asset.bufferDestination || BUFFER_DEFAULT;
+    var destProduct = products.find(function (p) {
+      return p.asset.name === destName && p.asset.status !== "buffered" && !p.skipped;
+    });
+
+    if (destProduct && amt > 0) {
+      destProduct.amount += amt;
+      destProduct.bufferIncoming += amt;
+      products.push({
+        asset: b.asset,
+        normTarget: b.normTarget,
+        amount: 0,
+        skipped: true,
+        reason: "暂存中",
+        bufferTo: destProduct.asset.name,
+        bufferRedirected: amt,
+        bufferIncoming: 0,
+      });
+      allocatedTotal += amt;
+    } else {
+      // 去向不存在或不可用：本月这部分钱保留为现金
+      products.push({
+        asset: b.asset,
+        normTarget: b.normTarget,
+        amount: 0,
+        skipped: true,
+        reason: "暂存（去向不可用）",
+        bufferTo: destName,
+        bufferRedirected: 0,
+        bufferIncoming: 0,
+      });
+    }
+  });
+
+  // 最后把 useCorrection / 投机层超限的 skipped 加进 products
+  skipped.forEach(function (s) {
+    products.push({ asset: s.asset, normTarget: s.normTarget, amount: 0, skipped: true, reason: s.reason, bufferIncoming: 0 });
+  });
 
   // 按层级汇总（使用归一化权重）
   var layers = {};
@@ -543,12 +609,16 @@ function calcAllocation(inputs) {
     targetMissing: targetSum <= 0,
     speculativeRatio: speculativeRatio,
     speculativePaused: speculativePaused,
+    bufferedCount: bufferedList.length,
+    bufferedAllocTotal: bufferedAllocTotal,
     products: products,
     layers: layerList,
   };
 }
 
 function statusLabel(layer) {
+  if (layer.allSkipped && layer.products.some(function (p) { return p.reason === "投机层超限暂停"; })) return "超限暂停";
+  if (layer.allSkipped && layer.products.every(function (p) { return p.reason === "暂存中" || p.reason === "暂存（去向不可用）"; })) return "全部暂存";
   if (layer.allSkipped) return "偏高暂停";
   if (layer.hasSkipped) return "部分暂停";
   if (layer.total === 0) return "暂停";
@@ -652,11 +722,21 @@ function refreshAllocation() {
       '<div class="alloc-layer-body">' +
         layer.products.map(function (p) {
           var skippedClass = p.skipped ? " skipped" : "";
+          var nameHtml = esc(p.asset.name);
+          if (p.bufferTo && p.bufferRedirected > 0) {
+            nameHtml += '<small class="prod-buffer">→ ' + esc(p.bufferTo) + " · " + money(p.bufferRedirected) + "</small>";
+          } else if (p.reason === "暂存（去向不可用）") {
+            nameHtml += '<small class="prod-buffer">→ ' + esc(p.bufferTo || "") + "（去向不可用）</small>";
+          }
+          var amountHtml = money(p.amount);
+          var subText = pct(p.normTarget);
+          if (p.skipped) subText += " · " + esc(p.reason);
+          else if (p.bufferIncoming > 0) subText += " · 含 " + money(p.bufferIncoming) + " 暂存";
           return '<div class="alloc-product' + skippedClass + '">' +
-            '<span class="prod-name">' + esc(p.asset.name) + "</span>" +
+            '<span class="prod-name">' + nameHtml + "</span>" +
             '<span class="prod-amount">' +
-              money(p.amount) +
-              "<small>" + pct(p.normTarget) + (p.skipped ? " · " + esc(p.reason) : "") + "</small>" +
+              amountHtml +
+              "<small>" + subText + "</small>" +
             "</span>" +
           "</div>";
         }).join("") +
@@ -701,6 +781,9 @@ function saveAllocation() {
       amount: p.amount,
       skipped: p.skipped,
       reason: p.reason || "",
+      bufferTo: p.bufferTo || "",
+      bufferRedirected: p.bufferRedirected || 0,
+      bufferIncoming: p.bufferIncoming || 0,
     };
   });
 
@@ -833,8 +916,14 @@ function openEditor(config) {
 
 function openAssetEditor(id) {
   const isNew = !id;
-  const raw = isNew ? { id: crypto.randomUUID(), layer: "现金层", element: "水", name: "", type: "", target: 0.05, value: 0, cost: 0, updated: today(), note: "" } : data.assets.find((x) => x.id === id);
-  const item = { ...raw, target: Math.round(numberValue(raw.target) * 100) };
+  const raw = isNew ? { id: crypto.randomUUID(), layer: "现金层", element: "水", name: "", type: "", target: 0.05, value: 0, cost: 0, updated: today(), note: "", status: "available", bufferDestination: "" } : data.assets.find((x) => x.id === id);
+  const item = { ...raw, target: Math.round(numberValue(raw.target) * 100), status: raw.status || "available", bufferDestination: raw.bufferDestination || "" };
+  // 暂存去向候选：所有 available 资产（排除自己），加一个空选项
+  const destOptions = [""].concat(
+    data.assets
+      .filter((a) => a.id !== item.id && (a.status || "available") === "available")
+      .map((a) => a.name)
+  );
   openEditor({
     title: isNew ? "新增资产" : "编辑资产",
     isNew,
@@ -846,6 +935,8 @@ function openAssetEditor(id) {
       { key: "element", label: "五行", type: "select", options: ["金", "水", "土", "火", "金水"] },
       { key: "type", label: "产品类型" },
       { key: "target", label: "目标占比（%）", type: "number", pctInput: true },
+      { key: "status", label: "状态", type: "select", options: ["available", "buffered"], hint: "buffered=暂存到下方指定产品（如 QDII 限购阶段）" },
+      { key: "bufferDestination", label: "暂存去向（仅 buffered 时生效）", type: "select", options: destOptions },
       { key: "value", label: "当前市值", type: "number" },
       { key: "cost", label: "累计投入", type: "number" },
       { key: "updated", label: "更新日期", type: "date" },
@@ -916,28 +1007,32 @@ document.querySelector("#addMonthBtn").addEventListener("click", () => openMonth
 document.querySelector("#addEntryBtn").addEventListener("click", () => openEntryEditor());
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
-  if (!confirm("套用22岁外派配置：按新方案更新14项资产的目标占比和层级。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n\n确定继续吗？")) return;
+  if (!confirm("套用22岁外派配置：按新方案更新资产的目标占比、层级和暂存状态。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n• QDII 类（标普500/全球医疗/纳指/矿股/自选）会被标记为 buffered → 货币基金，国内阶段自动暂存\n\n确定继续吗？")) return;
   var byName = {};
   data.assets.forEach(function (a) { byName[a.name] = a; });
   var nextAssets = [];
   HALF_FIRE_PLAN.forEach(function (row) {
-    var existing = byName[row[2]];
+    var existing = byName[row.name];
     if (existing) {
       nextAssets.push(Object.assign({}, existing, {
-        layer: row[0],
-        element: row[1],
-        type: row[3],
-        target: row[4],
+        layer: row.layer,
+        element: row.element,
+        type: row.type,
+        target: row.target,
+        status: row.status,
+        bufferDestination: row.bufferDestination || "",
       }));
-      delete byName[row[2]];
+      delete byName[row.name];
     } else {
       nextAssets.push({
         id: crypto.randomUUID(),
-        layer: row[0],
-        element: row[1],
-        name: row[2],
-        type: row[3],
-        target: row[4],
+        layer: row.layer,
+        element: row.element,
+        name: row.name,
+        type: row.type,
+        target: row.target,
+        status: row.status,
+        bufferDestination: row.bufferDestination || "",
         value: 0,
         cost: 0,
         updated: "",
@@ -945,15 +1040,15 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
       });
     }
   });
-  // 旧方案有但新方案没有的产品：保留但目标占比设为0
+  // 旧方案有但新方案没有的产品：保留但目标占比设为0，且改回 available 避免被无意 buffered
   Object.keys(byName).forEach(function (name) {
     var orphan = byName[name];
-    nextAssets.push(Object.assign({}, orphan, { target: 0, note: (orphan.note ? orphan.note + "｜" : "") + "已不在新方案，建议清仓后删除" }));
+    nextAssets.push(Object.assign({}, orphan, { target: 0, status: "available", bufferDestination: "", note: (orphan.note ? orphan.note + "｜" : "") + "已不在新方案，建议清仓后删除" }));
   });
   data.assets = nextAssets;
   saveData();
   render();
-  alert("新配置已套用。建议去「资产」Tab 检查每项的层级和目标占比，确认无误后开始按新比例补仓。");
+  alert("新配置已套用。建议去「资产」Tab 检查每项的层级、目标占比和状态，确认无误后开始按新比例补仓。");
 });
 
 function refreshSyncDialog() {

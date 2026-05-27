@@ -615,6 +615,19 @@ button:focus-visible, .card:focus-visible {
   color: var(--fire);
 }
 
+.alloc-product .prod-buffer {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.card.buffered {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
 .alloc-save-btn {
   width: 100%;
   min-height: 48px;
