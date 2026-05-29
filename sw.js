@@ -1,4 +1,4 @@
-const CACHE_NAME = "wuxing-finance-app-v7-2";
+const CACHE_NAME = "wuxing-finance-app-v7-3";
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./supabase.js", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", (event) => {

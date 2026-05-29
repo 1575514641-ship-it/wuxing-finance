@@ -2,32 +2,34 @@ const STORAGE_KEY = "wuxing-finance-app-v1";
 const META_KEY = "wuxing-finance-meta-v1";
 
 // 22岁外派起步配置：权益重(50%) + 海外重(51%) + USD分仓，对应外派收入和10+年长期持有
-// status: "available" 国内可买；"buffered" 国内阶段暂存到 bufferDestination 指向的产品（按 name 匹配）
-const BUFFER_DEFAULT = "货币基金"; // RMB 货基作为缺省暂存去向
+// status: "available" 国内可买；"buffered" 国内阶段暂存到 bufferDestinationId 指向的产品
+const BUFFER_DEFAULT_ID = "cash-rmb";
+const BUFFER_DEFAULT = "货币基金"; // 兼容旧数据的名称回退
 const HALF_FIRE_PLAN = [
-  { layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.05, status: "available" },
-  { layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "available" },
-  { layer: "防御层", element: "金", name: "黄金积存/黄金ETF", type: "黄金类", target: 0.10, status: "available" },
-  { layer: "防御层", element: "金", name: "红利低波指数", type: "红利类", target: 0.07, status: "available" },
-  { layer: "防御层", element: "金", name: "中长期纯债基金", type: "债券类", target: 0.05, status: "available" },
-  { layer: "生财层", element: "土", name: "沪深300/A500指数", type: "宽基指数", target: 0.15, status: "available" },
-  { layer: "生财层", element: "土", name: "中证500指数", type: "中盘成长", target: 0.07, status: "available" },
-  { layer: "成长层", element: "金水", name: "标普500", type: "海外宽基", target: 0.22, status: "buffered", bufferDestination: BUFFER_DEFAULT },
-  { layer: "成长层", element: "金水", name: "全球医疗/制药", type: "海外主题", target: 0.07, status: "buffered", bufferDestination: BUFFER_DEFAULT },
-  { layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.07, status: "buffered", bufferDestination: BUFFER_DEFAULT },
-  { layer: "投机层", element: "火", name: "纳斯达克100/科技主题", type: "科技成长", target: 0.05, status: "buffered", bufferDestination: BUFFER_DEFAULT },
-  { layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "buffered", bufferDestination: BUFFER_DEFAULT },
+  { id: BUFFER_DEFAULT_ID, layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.05, status: "available" },
+  { id: "cash-usd", layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "available" },
+  { id: "gold-etf", layer: "防御层", element: "金", name: "黄金积存/黄金ETF", type: "黄金类", target: 0.10, status: "available" },
+  { id: "dividend-lowvol", layer: "防御层", element: "金", name: "红利低波指数", type: "红利类", target: 0.07, status: "available" },
+  { id: "bond-midlong", layer: "防御层", element: "金", name: "中长期纯债基金", type: "债券类", target: 0.05, status: "available" },
+  { id: "a500-csi300", layer: "生财层", element: "土", name: "沪深300/A500指数", type: "宽基指数", target: 0.15, status: "available" },
+  { id: "csi500", layer: "生财层", element: "土", name: "中证500指数", type: "中盘成长", target: 0.07, status: "available" },
+  { id: "sp500", layer: "成长层", element: "金水", name: "标普500", type: "海外宽基", target: 0.22, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "global-healthcare", layer: "成长层", element: "金水", name: "全球医疗/制药", type: "海外主题", target: 0.07, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "gold-miners", layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.07, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "nasdaq-tech", layer: "投机层", element: "火", name: "纳斯达克100/科技主题", type: "科技成长", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "speculative-stock", layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
 ];
 
 const defaultData = {
   assets: HALF_FIRE_PLAN.map((row) => ({
-    id: crypto.randomUUID(),
+    id: row.id || crypto.randomUUID(),
     layer: row.layer,
     element: row.element,
     name: row.name,
     type: row.type,
     target: row.target,
     status: row.status,
+    bufferDestinationId: row.bufferDestinationId || "",
     bufferDestination: row.bufferDestination || "",
     value: 0,
     cost: 0,
@@ -112,18 +114,52 @@ function normalizeData(input) {
   const fallback = structuredClone(defaultData);
   const source = input && typeof input === "object" ? input : {};
   const assets = Array.isArray(source.assets) ? source.assets : fallback.assets;
-  // 兼容老数据：缺 status / bufferDestination 时回填默认值
+  // 兼容老数据：缺 status / bufferDestinationId 时回填默认值
   assets.forEach((a) => {
     if (a && typeof a === "object") {
+      if (!a.id) a.id = crypto.randomUUID();
       if (typeof a.status === "undefined") a.status = "available";
+      if (typeof a.bufferDestinationId === "undefined") a.bufferDestinationId = "";
       if (typeof a.bufferDestination === "undefined") a.bufferDestination = "";
     }
   });
+  syncBufferDestinations(assets);
   return {
     assets,
     monthly: Array.isArray(source.monthly) ? source.monthly : fallback.monthly,
     entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
   };
+}
+
+function isBufferedStatus(status) {
+  return String(status || "") === "buffered" || String(status || "").startsWith("buffered:");
+}
+
+function isAvailableAsset(asset) {
+  return asset && !isBufferedStatus(asset.status) && String(asset.status || "available") !== "paused:manual";
+}
+
+function syncBufferDestinations(assets) {
+  assets.forEach(function (asset) {
+    if (!asset || !isBufferedStatus(asset.status)) return;
+    var byId = asset.bufferDestinationId ? assets.find(function (a) { return a.id === asset.bufferDestinationId && a.id !== asset.id; }) : null;
+    var byName = asset.bufferDestination ? assets.find(function (a) { return a.name === asset.bufferDestination && a.id !== asset.id; }) : null;
+    var fallback = assets.find(function (a) { return a.id === BUFFER_DEFAULT_ID && a.id !== asset.id; }) || assets.find(function (a) { return a.name === BUFFER_DEFAULT && a.id !== asset.id; });
+    var dest = byId || byName || fallback;
+    if (dest) {
+      asset.bufferDestinationId = dest.id;
+      asset.bufferDestination = dest.name;
+    }
+  });
+}
+
+function resolveBufferDestination(asset, products) {
+  var destId = asset.bufferDestinationId || "";
+  var destName = asset.bufferDestination || BUFFER_DEFAULT;
+  return products.find(function (p) {
+    var matches = destId ? p.asset.id === destId : p.asset.name === destName;
+    return matches && p.asset.id !== asset.id && isAvailableAsset(p.asset) && !p.skipped;
+  });
 }
 
 function loadMeta() {
@@ -312,9 +348,10 @@ function renderAssets() {
     const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
     const status = ratio - numberValue(item.target);
     const statusText = status > 0.05 ? "偏高：暂停/少投" : status < -0.05 ? "偏低：优先补" : "正常";
-    const isBuffered = item.status === "buffered";
+    const isBuffered = isBufferedStatus(item.status);
+    const bufferDest = data.assets.find((a) => a.id === item.bufferDestinationId) || data.assets.find((a) => a.name === item.bufferDestination);
     const bufferBadge = isBuffered
-      ? '<i class="badge fire">暂存→' + esc(item.bufferDestination || "货币基金") + "</i> "
+      ? '<i class="badge fire">暂存→' + esc((bufferDest && bufferDest.name) || item.bufferDestination || BUFFER_DEFAULT) + "</i> "
       : "";
     const card = document.createElement("article");
     card.className = "card" + (isBuffered ? " buffered" : "");
@@ -479,7 +516,25 @@ function calcAllocation(inputs) {
 
   // 归一化权重
   var norms = data.assets.map(function (a) {
-    return { asset: a, normTarget: targetSum > 0 ? numberValue(a.target) / targetSum : 0 };
+    return { asset: a, normTarget: targetSum > 0 ? numberValue(a.target) / targetSum : 0, effectiveTarget: targetSum > 0 ? numberValue(a.target) / targetSum : 0 };
+  });
+
+  // 暂存接收方用 effectiveTarget 判断是否偏高，避免 RMB 货基承接 QDII 暂存后被误判。
+  norms.forEach(function (n) {
+    if (!isBufferedStatus(n.asset.status) || (speculativePaused && n.asset.layer === "投机层")) return;
+    var dest = null;
+    if (n.asset.bufferDestinationId) {
+      dest = norms.find(function (x) { return x.asset.id === n.asset.bufferDestinationId; });
+    }
+    if (!dest && n.asset.bufferDestination) {
+      dest = norms.find(function (x) { return x.asset.name === n.asset.bufferDestination; });
+    }
+    if (!dest) {
+      dest = norms.find(function (x) { return x.asset.id === BUFFER_DEFAULT_ID; }) || norms.find(function (x) { return x.asset.name === BUFFER_DEFAULT; });
+    }
+    if (dest && isAvailableAsset(dest.asset)) {
+      dest.effectiveTarget += n.normTarget;
+    }
   });
 
   // 第一遍：按 status 分流
@@ -488,11 +543,11 @@ function calcAllocation(inputs) {
   var bufferedList = []; // status === "buffered" 的产品，单独算重定向
   norms.forEach(function (n) {
     var currentRatio = totalAssets > 0 ? numberValue(n.asset.value) / totalAssets : 0;
-    var gap = currentRatio - n.normTarget;
-    if (n.asset.status === "buffered") {
-      bufferedList.push({ asset: n.asset, normTarget: n.normTarget, gap: gap });
-    } else if (speculativePaused && n.asset.layer === "投机层") {
+    var gap = currentRatio - n.effectiveTarget;
+    if (speculativePaused && n.asset.layer === "投机层") {
       skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "投机层超限暂停" });
+    } else if (isBufferedStatus(n.asset.status)) {
+      bufferedList.push({ asset: n.asset, normTarget: n.normTarget, gap: gap });
     } else if (useCorrection && gap > 0.05) {
       skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "偏高暂停" });
     } else {
@@ -538,11 +593,9 @@ function calcAllocation(inputs) {
     var amt = isLast ? remaining : Math.min(Math.max(raw, 0), remaining);
     bufferedAllocSum += amt;
 
-    // 解析 destination：name 匹配，且 destination 必须是 available 的产品（防循环 / 防去向消失）
+    // 解析 destination：优先 assetId，旧数据回退 name；destination 必须可买（防循环 / 防去向消失）
+    var destProduct = resolveBufferDestination(b.asset, products);
     var destName = b.asset.bufferDestination || BUFFER_DEFAULT;
-    var destProduct = products.find(function (p) {
-      return p.asset.name === destName && p.asset.status !== "buffered" && !p.skipped;
-    });
 
     if (destProduct && amt > 0) {
       destProduct.amount += amt;
@@ -896,7 +949,11 @@ function fieldsToHtml(fields, values) {
     const safeValue = esc(value);
     if (field.type === "select") {
       return `<div class="field"><label>${safeLabel}</label><select name="${safeKey}">
-        ${field.options.map((o) => `<option value="${esc(o)}" ${String(o) === String(value) ? "selected" : ""}>${esc(o)}</option>`).join("")}
+        ${field.options.map((o) => {
+          const optionValue = typeof o === "object" ? o.value : o;
+          const optionLabel = typeof o === "object" ? o.label : o;
+          return `<option value="${esc(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${esc(optionLabel)}</option>`;
+        }).join("")}
       </select></div>`;
     }
     if (field.type === "textarea") {
@@ -916,13 +973,13 @@ function openEditor(config) {
 
 function openAssetEditor(id) {
   const isNew = !id;
-  const raw = isNew ? { id: crypto.randomUUID(), layer: "现金层", element: "水", name: "", type: "", target: 0.05, value: 0, cost: 0, updated: today(), note: "", status: "available", bufferDestination: "" } : data.assets.find((x) => x.id === id);
-  const item = { ...raw, target: Math.round(numberValue(raw.target) * 100), status: raw.status || "available", bufferDestination: raw.bufferDestination || "" };
+  const raw = isNew ? { id: crypto.randomUUID(), layer: "现金层", element: "水", name: "", type: "", target: 0.05, value: 0, cost: 0, updated: today(), note: "", status: "available", bufferDestinationId: "", bufferDestination: "" } : data.assets.find((x) => x.id === id);
+  const item = { ...raw, target: Math.round(numberValue(raw.target) * 100), status: raw.status || "available", bufferDestinationId: raw.bufferDestinationId || "", bufferDestination: raw.bufferDestination || "" };
   // 暂存去向候选：所有 available 资产（排除自己），加一个空选项
-  const destOptions = [""].concat(
+  const destOptions = [{ value: "", label: "不指定" }].concat(
     data.assets
-      .filter((a) => a.id !== item.id && (a.status || "available") === "available")
-      .map((a) => a.name)
+      .filter((a) => a.id !== item.id && isAvailableAsset(a))
+      .map((a) => ({ value: a.id, label: a.name }))
   );
   openEditor({
     title: isNew ? "新增资产" : "编辑资产",
@@ -936,7 +993,7 @@ function openAssetEditor(id) {
       { key: "type", label: "产品类型" },
       { key: "target", label: "目标占比（%）", type: "number", pctInput: true },
       { key: "status", label: "状态", type: "select", options: ["available", "buffered"], hint: "buffered=暂存到下方指定产品（如 QDII 限购阶段）" },
-      { key: "bufferDestination", label: "暂存去向（仅 buffered 时生效）", type: "select", options: destOptions },
+      { key: "bufferDestinationId", label: "暂存去向（仅 buffered 时生效）", type: "select", options: destOptions },
       { key: "value", label: "当前市值", type: "number" },
       { key: "cost", label: "累计投入", type: "number" },
       { key: "updated", label: "更新日期", type: "date" },
@@ -1020,18 +1077,20 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
         type: row.type,
         target: row.target,
         status: row.status,
+        bufferDestinationId: row.bufferDestinationId || "",
         bufferDestination: row.bufferDestination || "",
       }));
       delete byName[row.name];
     } else {
       nextAssets.push({
-        id: crypto.randomUUID(),
+        id: row.id || crypto.randomUUID(),
         layer: row.layer,
         element: row.element,
         name: row.name,
         type: row.type,
         target: row.target,
         status: row.status,
+        bufferDestinationId: row.bufferDestinationId || "",
         bufferDestination: row.bufferDestination || "",
         value: 0,
         cost: 0,
@@ -1043,9 +1102,10 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   // 旧方案有但新方案没有的产品：保留但目标占比设为0，且改回 available 避免被无意 buffered
   Object.keys(byName).forEach(function (name) {
     var orphan = byName[name];
-    nextAssets.push(Object.assign({}, orphan, { target: 0, status: "available", bufferDestination: "", note: (orphan.note ? orphan.note + "｜" : "") + "已不在新方案，建议清仓后删除" }));
+    nextAssets.push(Object.assign({}, orphan, { target: 0, status: "available", bufferDestinationId: "", bufferDestination: "", note: (orphan.note ? orphan.note + "｜" : "") + "已不在新方案，建议清仓后删除" }));
   });
   data.assets = nextAssets;
+  syncBufferDestinations(data.assets);
   saveData();
   render();
   alert("新配置已套用。建议去「资产」Tab 检查每项的层级、目标占比和状态，确认无误后开始按新比例补仓。");
@@ -1125,6 +1185,7 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
   const index = collection.findIndex((item) => item.id === updated.id);
   if (index >= 0) collection[index] = updated;
   else collection.push(updated);
+  if (editing.collection === "assets") syncBufferDestinations(data.assets);
   saveData();
   document.querySelector("#editorDialog").close();
   render();
