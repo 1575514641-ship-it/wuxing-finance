@@ -162,6 +162,40 @@ function resolveBufferDestination(asset, products) {
   });
 }
 
+function computeEffectiveTargets(assets) {
+  var targetSum = assets.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
+  var totalAssets = assets.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  var speculativeValue = assets.reduce(function (s, a) {
+    return a.layer === "投机层" ? s + numberValue(a.value) : s;
+  }, 0);
+  var speculativePaused = totalAssets > 0 ? speculativeValue / totalAssets >= 0.10 : false;
+  var result = {};
+
+  assets.forEach(function (asset) {
+    result[asset.id] = targetSum > 0 ? numberValue(asset.target) / targetSum : 0;
+  });
+
+  assets.forEach(function (asset) {
+    if (!isBufferedStatus(asset.status) || (speculativePaused && asset.layer === "投机层")) return;
+    var normTarget = targetSum > 0 ? numberValue(asset.target) / targetSum : 0;
+    var dest = null;
+    if (asset.bufferDestinationId) {
+      dest = assets.find(function (a) { return a.id === asset.bufferDestinationId && a.id !== asset.id; });
+    }
+    if (!dest && asset.bufferDestination) {
+      dest = assets.find(function (a) { return a.name === asset.bufferDestination && a.id !== asset.id; });
+    }
+    if (!dest) {
+      dest = assets.find(function (a) { return a.id === BUFFER_DEFAULT_ID && a.id !== asset.id; }) || assets.find(function (a) { return a.name === BUFFER_DEFAULT && a.id !== asset.id; });
+    }
+    if (dest && isAvailableAsset(dest)) {
+      result[dest.id] = numberValue(result[dest.id]) + normTarget;
+    }
+  });
+
+  return result;
+}
+
 function loadMeta() {
   try {
     const raw = localStorage.getItem(META_KEY);
@@ -342,17 +376,23 @@ function renderDashboard() {
 function renderAssets() {
   const list = document.querySelector("#assetList");
   const t = totals();
+  const targetSum = data.assets.reduce((sum, item) => sum + numberValue(item.target), 0);
+  const effectiveTargets = computeEffectiveTargets(data.assets);
   list.innerHTML = "";
   data.assets.forEach((item) => {
     const profit = numberValue(item.value) - numberValue(item.cost);
     const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
-    const status = ratio - numberValue(item.target);
+    const normTarget = targetSum > 0 ? numberValue(item.target) / targetSum : 0;
+    const effectiveTarget = numberValue(effectiveTargets[item.id]);
+    const hasEffectiveIncoming = effectiveTarget > normTarget + 0.0001;
+    const status = ratio - normTarget;
     const statusText = status > 0.05 ? "偏高：暂停/少投" : status < -0.05 ? "偏低：优先补" : "正常";
     const isBuffered = isBufferedStatus(item.status);
     const bufferDest = data.assets.find((a) => a.id === item.bufferDestinationId) || data.assets.find((a) => a.name === item.bufferDestination);
     const bufferBadge = isBuffered
       ? '<i class="badge fire">暂存→' + esc((bufferDest && bufferDest.name) || item.bufferDestination || BUFFER_DEFAULT) + "</i> "
       : "";
+    const targetLine = hasEffectiveIncoming ? `<small class="effective-target">含暂存后 ${pct(effectiveTarget)}</small>` : "";
     const card = document.createElement("article");
     card.className = "card" + (isBuffered ? " buffered" : "");
     card.innerHTML = `
@@ -363,7 +403,7 @@ function renderAssets() {
       <div class="num"><span class="mini-label">当前市值</span><b>${money(item.value)}</b></div>
       <div class="num"><span class="mini-label">累计投入</span><b>${money(item.cost)}</b></div>
       <div class="num"><span class="mini-label">盈亏</span><b>${money(profit)}</b></div>
-      <div class="num"><span class="mini-label">占比/目标</span><b>${pct(ratio)} / ${pct(item.target)}</b></div>
+      <div class="num"><span class="mini-label">占比/目标</span><b>${pct(ratio)} / ${pct(normTarget)}</b>${targetLine}</div>
     `;
     card.addEventListener("click", () => openAssetEditor(item.id));
     list.appendChild(card);
@@ -373,7 +413,9 @@ function renderAssets() {
   const issues = data.assets
     .map((item) => {
       const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
-      const gap = ratio - numberValue(item.target);
+      const normTarget = targetSum > 0 ? numberValue(item.target) / targetSum : 0;
+      const gapTarget = numberValue(effectiveTargets[item.id]) || normTarget;
+      const gap = ratio - gapTarget;
       if (gap > 0.05) return `${esc(item.name)} 偏高 ${pct(gap)}，下月少投。`;
       if (gap < -0.05) return `${esc(item.name)} 偏低 ${pct(Math.abs(gap))}，可优先补。`;
       return null;
@@ -514,27 +556,12 @@ function calcAllocation(inputs) {
   var speculativePaused = speculativeRatio >= 0.10;
   var useCorrection = allocState.mode === "修正" && totalAssets > 0 && targetSum > 0;
 
+  var effectiveTargets = computeEffectiveTargets(data.assets);
+
   // 归一化权重
   var norms = data.assets.map(function (a) {
-    return { asset: a, normTarget: targetSum > 0 ? numberValue(a.target) / targetSum : 0, effectiveTarget: targetSum > 0 ? numberValue(a.target) / targetSum : 0 };
-  });
-
-  // 暂存接收方用 effectiveTarget 判断是否偏高，避免 RMB 货基承接 QDII 暂存后被误判。
-  norms.forEach(function (n) {
-    if (!isBufferedStatus(n.asset.status) || (speculativePaused && n.asset.layer === "投机层")) return;
-    var dest = null;
-    if (n.asset.bufferDestinationId) {
-      dest = norms.find(function (x) { return x.asset.id === n.asset.bufferDestinationId; });
-    }
-    if (!dest && n.asset.bufferDestination) {
-      dest = norms.find(function (x) { return x.asset.name === n.asset.bufferDestination; });
-    }
-    if (!dest) {
-      dest = norms.find(function (x) { return x.asset.id === BUFFER_DEFAULT_ID; }) || norms.find(function (x) { return x.asset.name === BUFFER_DEFAULT; });
-    }
-    if (dest && isAvailableAsset(dest.asset)) {
-      dest.effectiveTarget += n.normTarget;
-    }
+    var normTarget = targetSum > 0 ? numberValue(a.target) / targetSum : 0;
+    return { asset: a, normTarget: normTarget, effectiveTarget: numberValue(effectiveTargets[a.id]) };
   });
 
   // 第一遍：按 status 分流
@@ -1109,6 +1136,21 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   saveData();
   render();
   alert("新配置已套用。建议去「资产」Tab 检查每项的层级、目标占比和状态，确认无误后开始按新比例补仓。");
+});
+
+document.querySelector("#unlockBufferedBtn")?.addEventListener("click", () => {
+  if (!confirm("把所有「暂存中」的资产改为「可买」状态。出海开通海外渠道后用。会清空它们的暂存去向。当前市值/累计投入不变。确定吗？")) return;
+  var count = 0;
+  data.assets.forEach(function (asset) {
+    if (!isBufferedStatus(asset.status)) return;
+    asset.status = "available";
+    asset.bufferDestinationId = "";
+    asset.bufferDestination = "";
+    count += 1;
+  });
+  saveData();
+  render();
+  alert("已解锁 " + count + " 个暂存资产。后续分配会按可买资产正常计算。");
 });
 
 function refreshSyncDialog() {
