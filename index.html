@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.4</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.5</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -56,6 +56,7 @@
         <button class="tab" data-view="monthly">月度</button>
         <button class="tab" data-view="ledger">随手记</button>
         <button class="tab" data-view="rules">规则</button>
+        <button class="tab" data-view="fire">FIRE</button>
       </nav>
 
       <section id="assets" class="view active">
@@ -169,6 +170,71 @@
           <article><b>纳指/科技｜投机层</b><span>不追高，回撤后在投机层额度内买；达到10%自动暂停。</span></article>
         </div>
       </section>
+
+      <section id="fire" class="view">
+        <div class="section-head">
+          <div>
+            <h2>FIRE 测算</h2>
+            <p>FIRE 不是退休，是有选择权。今天购买力和目标年龄名义金额分开看。</p>
+          </div>
+        </div>
+
+        <div class="alloc-inputs fire-inputs">
+          <div class="alloc-field">
+            <label for="fireAnnualExpense">目标年支出（今天购买力）</label>
+            <input id="fireAnnualExpense" type="text" inputmode="decimal" value="180000">
+          </div>
+          <div class="alloc-field">
+            <label for="fireCurrentAge">当前年龄</label>
+            <input id="fireCurrentAge" type="text" inputmode="decimal" value="22">
+          </div>
+          <div class="alloc-field">
+            <label for="fireTargetAge">目标年龄</label>
+            <input id="fireTargetAge" type="text" inputmode="decimal" value="35">
+          </div>
+          <div class="alloc-field">
+            <label for="fireInflationRate">通胀率（%）</label>
+            <input id="fireInflationRate" type="text" inputmode="decimal" value="3">
+          </div>
+          <div class="alloc-field">
+            <label for="fireRealReturn">最低线实际收益率（%）</label>
+            <input id="fireRealReturn" type="text" inputmode="decimal" value="4">
+          </div>
+          <div class="alloc-field">
+            <label for="fireSupplementIncome">半 FIRE 后年补充收入</label>
+            <input id="fireSupplementIncome" type="text" inputmode="decimal" value="60000">
+          </div>
+        </div>
+
+        <div id="fireResult" class="alloc-result fire-result">
+          <div class="fire-grid">
+            <div class="fire-card">
+              <span>4% 最低线（今天）</span>
+              <strong id="fireToday4">¥0</strong>
+              <small id="fireNominal4">目标年龄名义 ¥0</small>
+            </div>
+            <div class="fire-card">
+              <span>3.5% 稳健线（今天）</span>
+              <strong id="fireToday35">¥0</strong>
+              <small id="fireNominal35">目标年龄名义 ¥0</small>
+            </div>
+            <div class="fire-card">
+              <span>3% 安心线（今天）</span>
+              <strong id="fireToday3">¥0</strong>
+              <small id="fireNominal3">目标年龄名义 ¥0</small>
+            </div>
+          </div>
+
+          <div class="fire-progress">
+            <div class="alloc-summary-row"><span>净年支出</span><strong id="fireNetExpense">¥0</strong></div>
+            <div class="alloc-summary-row"><span>名义系数</span><strong id="fireNominalFactor">1.000</strong></div>
+            <div class="alloc-summary-row primary"><span>当前进度（今天口径）</span><strong id="fireProgressText">0.0%</strong></div>
+            <div class="progress-bar"><i id="fireProgressBar"></i></div>
+          </div>
+
+          <small class="fire-note">25 倍（4%）是最低自由线，不是安全感本身。3% 安心线才是从容半 FIRE 的目标。美国数据，中国市场未必完全适用，仅作参考。</small>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -210,7 +276,7 @@
     </form>
   </dialog>
 
-  <script src="./supabase.js?v=7-4"></script>
+  <script src="./supabase.js?v=7-5"></script>
   <script>
     // 自动配置 Supabase 云同步（个人使用，anon key 可公开）
     supabase.setConfig(
@@ -218,6 +284,6 @@
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6bGlnc2RleW5tb2JpZWt1ZGFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MDQ3MjAsImV4cCI6MjA5NTI4MDcyMH0.xP6Q2rKhyBVhsvY0xyXzf2eXjOp-zK9kvVASZ9uNiDk"
     );
   </script>
-  <script src="./app.js?v=7-4"></script>
+  <script src="./app.js?v=7-5"></script>
 </body>
 </html>

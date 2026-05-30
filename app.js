@@ -345,6 +345,7 @@ function render() {
     renderDashboard();
     renderAssets();
     renderAllocate();
+    renderFire();
     renderMonthly();
     renderEntries();
   } catch (err) {
@@ -442,6 +443,7 @@ function renderMonthly() {
     var planBadge = hasPlan
       ? '<i class="badge ok">计划 ' + money(plannedInvested) + (planMode ? "｜" + esc(planMode) : "") + '</i>'
       : "";
+    var bufferedAllocTotal = numberValue(item.allocationSummary && item.allocationSummary.bufferedAllocTotal);
     var noteText = esc(item.note) || (hasPlan ? "" : "月度复盘");
     const status = savingRate >= 0.35 ? "达标" : "未达标";
     const isCurrent = item.month === currentMonthKey;
@@ -456,6 +458,7 @@ function renderMonthly() {
       <div class="num"><span class="mini-label">支出</span><b>${money(expense)}</b></div>
       <div class="num"><span class="mini-label">结余</span><b>${money(surplus)}</b></div>
       ${hasPlan ? `<div class="num"><span class="mini-label">计划投资</span><b>${money(plannedInvested)}</b></div>` : ""}
+      ${hasPlan && bufferedAllocTotal > 0 ? `<div class="num"><span class="mini-label">含暂存</span><b>${money(bufferedAllocTotal)}</b></div>` : ""}
       <div class="num"><span class="mini-label">实际投入</span><b>${money(invested)}</b></div>
       <div class="num"><span class="mini-label">月末资产</span><b>${money(item.monthEndAssets)}</b></div>
       <div class="num"><span class="mini-label">储蓄率</span><b>${pct(savingRate)}</b></div>
@@ -493,6 +496,79 @@ function renderEntries() {
     card.addEventListener("click", () => openEntryEditor(item.id));
     list.appendChild(card);
   });
+}
+
+function fireMoney(value) {
+  return Math.round(numberValue(value) / 10000).toLocaleString("zh-CN") + " 万";
+}
+
+function calcFire(inputs) {
+  var annualExpense = max0(numberValue(inputs.annualExpense));
+  var supplementIncome = max0(numberValue(inputs.supplementIncome));
+  var currentAge = max0(numberValue(inputs.currentAge));
+  var targetAge = max0(numberValue(inputs.targetAge));
+  var inflationRate = clamp(numberValue(inputs.inflationRatePct) / 100, 0, 1);
+  var primaryRate = clamp(numberValue(inputs.realReturnPct) / 100, 0.01, 1);
+  var years = Math.max(targetAge - currentAge, 0);
+  var netAnnualExpense = Math.max(annualExpense - supplementIncome, 0);
+  var nominalFactor = Math.pow(1 + inflationRate, years);
+  var rates = [primaryRate, 0.035, 0.03];
+  var lines = rates.map(function (rate) {
+    var today = rate > 0 ? netAnnualExpense / rate : 0;
+    return {
+      rate: rate,
+      today: today,
+      nominal: today * nominalFactor,
+    };
+  });
+  var total = totals().value;
+  var progress = lines[0].today > 0 ? total / lines[0].today : 0;
+  return {
+    annualExpense: annualExpense,
+    supplementIncome: supplementIncome,
+    currentAge: currentAge,
+    targetAge: targetAge,
+    years: years,
+    inflationRate: inflationRate,
+    primaryRate: primaryRate,
+    netAnnualExpense: netAnnualExpense,
+    nominalFactor: nominalFactor,
+    lines: lines,
+    totalAssets: total,
+    progress: progress,
+  };
+}
+
+function getFireInputs() {
+  var annualExpenseEl = document.querySelector("#fireAnnualExpense");
+  if (!annualExpenseEl) return null;
+  return {
+    annualExpense: numberValue(annualExpenseEl.value || 180000),
+    currentAge: numberValue(document.querySelector("#fireCurrentAge").value || 22),
+    targetAge: numberValue(document.querySelector("#fireTargetAge").value || 35),
+    inflationRatePct: numberValue(document.querySelector("#fireInflationRate").value || 3),
+    realReturnPct: numberValue(document.querySelector("#fireRealReturn").value || 4),
+    supplementIncome: numberValue(document.querySelector("#fireSupplementIncome").value || 60000),
+  };
+}
+
+function renderFire() {
+  var inputs = getFireInputs();
+  if (!inputs) return;
+  var result = calcFire(inputs);
+  var primaryLabel = (result.primaryRate * 100).toFixed(1).replace(/\.0$/, "") + "% 最低线（今天）";
+  var primaryCard = document.querySelector("#fireToday4")?.closest(".fire-card");
+  if (primaryCard) primaryCard.querySelector("span").textContent = primaryLabel;
+  document.querySelector("#fireToday4").textContent = fireMoney(result.lines[0].today);
+  document.querySelector("#fireNominal4").textContent = "目标年龄名义 " + fireMoney(result.lines[0].nominal);
+  document.querySelector("#fireToday35").textContent = fireMoney(result.lines[1].today);
+  document.querySelector("#fireNominal35").textContent = "目标年龄名义 " + fireMoney(result.lines[1].nominal);
+  document.querySelector("#fireToday3").textContent = fireMoney(result.lines[2].today);
+  document.querySelector("#fireNominal3").textContent = "目标年龄名义 " + fireMoney(result.lines[2].nominal);
+  document.querySelector("#fireNetExpense").textContent = money(result.netAnnualExpense);
+  document.querySelector("#fireNominalFactor").textContent = result.nominalFactor.toFixed(3);
+  document.querySelector("#fireProgressText").textContent = pct(result.progress);
+  document.querySelector("#fireProgressBar").style.width = Math.min(result.progress, 1) * 100 + "%";
 }
 
 // ---- 月薪分配 ----
@@ -881,6 +957,7 @@ function saveAllocation() {
       allocatedTotal: result.allocatedTotal,
       actualRemainingCash: result.actualRemainingCash,
       remainingCash: result.cashflowAvailable - result.investBase,
+      bufferedAllocTotal: result.bufferedAllocTotal,
       speculativeRatio: result.speculativeRatio,
       speculativePaused: result.speculativePaused,
     },
@@ -966,6 +1043,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
   var saveBtn = document.querySelector("#allocSaveBtn");
   if (saveBtn) saveBtn.addEventListener("click", saveAllocation);
+
+  ["#fireAnnualExpense", "#fireCurrentAge", "#fireTargetAge", "#fireInflationRate", "#fireRealReturn", "#fireSupplementIncome"].forEach(function (selector) {
+    var input = document.querySelector(selector);
+    if (input) input.addEventListener("input", renderFire);
+  });
 });
 
 function fieldsToHtml(fields, values) {

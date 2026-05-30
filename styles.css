@@ -132,7 +132,7 @@ h1, h2, h3, p { margin: 0; }
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   background: #e5e7eb;
   padding: 4px;
   border-radius: 8px;
@@ -203,7 +203,7 @@ h1, h2, h3, p { margin: 0; }
 }
 
 .monthly-card {
-  grid-template-columns: minmax(0, 1.1fr) repeat(7, minmax(72px, .6fr));
+  grid-template-columns: minmax(0, 1.1fr) repeat(8, minmax(72px, .6fr));
 }
 
 .monthly-card.current-month {
@@ -489,6 +489,64 @@ button:focus-visible, .card:focus-visible {
   color: var(--water);
 }
 
+.fire-inputs {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fire-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.fire-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9fafb;
+  display: grid;
+  gap: 6px;
+}
+
+.fire-card span,
+.fire-card small,
+.fire-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fire-card strong {
+  font-size: 22px;
+  color: var(--ink);
+}
+
+.fire-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.progress-bar {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e5e7eb;
+}
+
+.progress-bar i {
+  display: block;
+  width: 0;
+  max-width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--water);
+}
+
+.fire-note {
+  display: block;
+  margin-top: 12px;
+}
+
 #allocHint {
   display: block;
   margin-top: 8px;
@@ -672,9 +730,10 @@ button:focus-visible, .card:focus-visible {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .tabs { grid-template-columns: repeat(5, 1fr); }
-  .tab { font-size: 12px; padding: 0 6px; }
+  .tabs { grid-template-columns: repeat(6, 1fr); }
+  .tab { font-size: 12px; padding: 0 4px; }
   .alloc-inputs { grid-template-columns: 1fr; }
+  .fire-inputs, .fire-grid { grid-template-columns: 1fr; }
   .top-actions > * { min-width: 0; }
   .sync-badge {
     justify-content: center;
