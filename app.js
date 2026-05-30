@@ -666,6 +666,7 @@ function calcAllocation(inputs) {
   // 可投池权重（pool 内部按 poolWeightSum 分 poolInvestBase）
   var poolWeightSum = pool.reduce(function (s, p) { return s + p.normTarget; }, 0);
   var allocatedTotal = 0;
+  var unbufferedCash = 0;
   var products = [];
 
   if (pool.length === 0 || poolWeightSum === 0) {
@@ -716,6 +717,7 @@ function calcAllocation(inputs) {
       allocatedTotal += amt;
     } else {
       // 去向不存在或不可用：本月这部分钱保留为现金
+      unbufferedCash += amt;
       products.push({
         asset: b.asset,
         normTarget: b.normTarget,
@@ -724,6 +726,7 @@ function calcAllocation(inputs) {
         reason: "暂存（去向不可用）",
         bufferTo: destName,
         bufferRedirected: 0,
+        bufferUnavailable: amt,
         bufferIncoming: 0,
       });
     }
@@ -767,6 +770,7 @@ function calcAllocation(inputs) {
     speculativePaused: speculativePaused,
     bufferedCount: bufferedList.length,
     bufferedAllocTotal: bufferedAllocTotal,
+    unbufferedCash: unbufferedCash,
     products: products,
     layers: layerList,
   };
@@ -829,6 +833,7 @@ function refreshAllocation() {
   document.querySelector("#allocTargetSaving").textContent = money(result.targetSaving);
   document.querySelector("#allocFinalInvest").textContent = money(result.allocatedTotal);
   document.querySelector("#allocRemaining").textContent = money(result.actualRemainingCash);
+  renderAllocationChecklist(result);
 
   // Hint
   var hint = document.querySelector("#allocHint");
@@ -910,6 +915,22 @@ function refreshAllocation() {
   });
 }
 
+function renderAllocationChecklist(result) {
+  var wrap = document.querySelector("#allocChecklist");
+  if (!wrap) return;
+  var inputs = result.inputs;
+  var remainingDetail = result.unbufferedCash > 0 ? "含去向不可用暂存 " + money(result.unbufferedCash) : "可继续保留现金";
+  var investDetail = result.bufferedAllocTotal > 0 ? "含暂存 " + money(result.bufferedAllocTotal) : "按目标直接买入";
+  wrap.innerHTML =
+    '<div class="checklist-title">工资到账后操作清单</div>' +
+    '<div class="checklist-grid">' +
+      '<div class="checklist-item"><span>固定支出账户</span><strong>' + money(inputs.expense) + '</strong><small>房租、订阅、保险等</small></div>' +
+      '<div class="checklist-item"><span>机动预留</span><strong>' + money(inputs.reserve) + '</strong><small>聚餐、人情、交通等</small></div>' +
+      '<div class="checklist-item primary"><span>本月计划投资</span><strong>' + money(result.allocatedTotal) + '</strong><small>' + investDetail + '</small></div>' +
+      '<div class="checklist-item"><span>暂存/剩余现金</span><strong>' + money(result.actualRemainingCash) + '</strong><small>' + remainingDetail + '</small></div>' +
+    '</div>';
+}
+
 function saveAllocation() {
   var inputs = getAllocInputs();
   if (inputs.income <= 0) {
@@ -939,6 +960,7 @@ function saveAllocation() {
       reason: p.reason || "",
       bufferTo: p.bufferTo || "",
       bufferRedirected: p.bufferRedirected || 0,
+      bufferUnavailable: p.bufferUnavailable || 0,
       bufferIncoming: p.bufferIncoming || 0,
     };
   });
@@ -958,6 +980,7 @@ function saveAllocation() {
       actualRemainingCash: result.actualRemainingCash,
       remainingCash: result.cashflowAvailable - result.investBase,
       bufferedAllocTotal: result.bufferedAllocTotal,
+      unbufferedCash: result.unbufferedCash,
       speculativeRatio: result.speculativeRatio,
       speculativePaused: result.speculativePaused,
     },

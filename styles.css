@@ -553,6 +553,45 @@ button:focus-visible, .card:focus-visible {
   color: #b45309;
 }
 
+.alloc-checklist {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 16px;
+}
+
+.checklist-title {
+  font-weight: 700;
+}
+
+.checklist-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.checklist-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel);
+  display: grid;
+  gap: 4px;
+}
+
+.checklist-item span,
+.checklist-item small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.checklist-item strong {
+  font-size: 18px;
+}
+
+.checklist-item.primary strong {
+  color: var(--water);
+}
+
 .alloc-mode {
   display: flex;
   gap: 8px;
@@ -734,6 +773,7 @@ button:focus-visible, .card:focus-visible {
   .tab { font-size: 12px; padding: 0 4px; }
   .alloc-inputs { grid-template-columns: 1fr; }
   .fire-inputs, .fire-grid { grid-template-columns: 1fr; }
+  .checklist-grid { grid-template-columns: 1fr; }
   .top-actions > * { min-width: 0; }
   .sync-badge {
     justify-content: center;
