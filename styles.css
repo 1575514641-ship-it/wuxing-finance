@@ -288,6 +288,52 @@ h1, h2, h3, p { margin: 0; }
   line-height: 1.6;
 }
 
+.rule-section-title {
+  font-size: 18px;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.product-table-wrap {
+  overflow-x: auto;
+  margin-bottom: 16px;
+}
+
+.product-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.product-table th, .product-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.product-table th {
+  background: #f9fafb;
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.product-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.rule-note {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
 dialog {
   width: min(680px, calc(100vw - 24px));
   border: 1px solid var(--line);
