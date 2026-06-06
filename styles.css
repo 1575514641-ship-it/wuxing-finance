@@ -655,9 +655,59 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
 .emergency-bar-fill.reached { background: var(--ok); }
 .emergency-bar-sub { color: var(--muted); font-size: 12px; }
 
+/* ---- 空状态 ---- */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+  display: grid;
+  gap: 8px;
+}
+.empty-icon { font-size: 36px; }
+.empty-state b { font-size: 16px; color: var(--ink); }
+.empty-state p { font-size: 13px; line-height: 1.6; }
+
+/* ---- 分配保存确认块 ---- */
+.alloc-save-ok { font-size: 14px; color: var(--ok); }
+.alloc-save-ok b { font-weight: 700; }
+.alloc-goto-monthly {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 12px;
+  padding: 4px 12px;
+  border: 1px solid var(--ok);
+  border-radius: 999px;
+  background: var(--success-bg);
+  color: var(--ok);
+  font-size: 13px;
+  cursor: pointer;
+}
+.alloc-goto-monthly:hover { background: #d1fae5; }
+
+/* ---- 随手记分组 ---- */
+.entry-group { margin-bottom: 4px; }
+.entry-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  user-select: none;
+  background: var(--line2);
+  border: 1px solid var(--line);
+}
+.entry-group-head:hover { background: #eaecef; }
+.entry-group-head b { font-size: 14px; }
+.entry-group-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.entry-arrow { transition: transform .2s; font-style: normal; font-size: 11px; }
+.entry-group.closed .entry-arrow { transform: rotate(-90deg); }
+.entry-group-body { display: grid; gap: 6px; margin-top: 4px; }
+.entry-group.closed .entry-group-body { display: none; }
+.entry-card { grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(72px, .6fr)); }
+
 /* ---- 响应式 ---- */
 @media (max-width: 760px) {
-  .app-shell { padding: 12px 12px 32px; }
   .topbar { align-items: flex-start; flex-direction: column; gap: 10px; }
   .top-actions { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); }
   .sync-badge { justify-content: center; min-height: 36px; padding: 4px 6px; width: 100%; }

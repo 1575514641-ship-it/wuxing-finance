@@ -388,6 +388,16 @@ function renderAssets() {
   const targetSum = data.assets.reduce((sum, item) => sum + numberValue(item.target), 0);
   const effectiveTargets = computeEffectiveTargets(data.assets);
   list.innerHTML = "";
+
+  if (!data.assets.length) {
+    list.innerHTML = '<div class="empty-state">' +
+      '<div class="empty-icon">📊</div>' +
+      '<b>还没有资产</b>' +
+      '<p>点「套用22岁外派配置」一键导入推荐方案，或手动新增资产。</p>' +
+      '</div>';
+    return;
+  }
+
   data.assets.forEach((item) => {
     const profit = numberValue(item.value) - numberValue(item.cost);
     const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
@@ -573,25 +583,65 @@ function renderEntries() {
   const list = document.querySelector("#entryList");
   list.innerHTML = "";
   const sorted = [...data.entries].sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
   if (!sorted.length) {
-    list.innerHTML = `<article class="metric"><span>暂无记录</span><strong>记第一笔</strong><small>收入、投资、大额消费都可以</small></article>`;
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><b>暂无记录</b><p>点「记一笔」记录收入、投资或大额消费。</p></div>';
     return;
   }
+
+  // 按年月分组
+  const groups = {};
   sorted.forEach((item) => {
-    const card = document.createElement("article");
-    card.className = "card";
-    card.innerHTML = `
-      <div class="card-title">
-        <b>${esc(item.date) || "未填日期"}</b>
-        <span><i class="badge">${esc(item.kind)}</i> ${esc(item.note) || esc(item.target) || ""}</span>
-      </div>
-      <div class="num"><span class="mini-label">金额</span><b>${money(item.amount)}</b></div>
-      <div class="num"><span class="mini-label">去向</span><b>${esc(item.target) || "-"}</b></div>
-      <div class="num"><span class="mini-label">渠道</span><b>${esc(item.channel) || "-"}</b></div>
-      <div class="num"><span class="mini-label">备注</span><b>${item.note ? "有" : "-"}</b></div>
-    `;
-    card.addEventListener("click", () => openEntryEditor(item.id));
-    list.appendChild(card);
+    const key = String(item.date || "").slice(0, 7).replace("-", "/") || "未知";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(item);
+  });
+
+  Object.keys(groups).sort((a, b) => b.localeCompare(a)).forEach((monthKey) => {
+    const items = groups[monthKey];
+    const totalIncome = items.filter(i => i.kind === "收入").reduce((s, i) => s + numberValue(i.amount), 0);
+    const totalInvest = items.filter(i => i.kind === "投资").reduce((s, i) => s + numberValue(i.amount), 0);
+    const isOpen = !document.querySelector(`[data-entry-group="${monthKey}"]`)?.classList.contains("closed");
+
+    const groupEl = document.createElement("div");
+    groupEl.className = "entry-group";
+    groupEl.dataset.entryGroup = monthKey;
+
+    const summary = [];
+    if (totalIncome > 0) summary.push("收入 " + money(totalIncome));
+    if (totalInvest > 0) summary.push("投资 " + money(totalInvest));
+
+    groupEl.innerHTML =
+      '<div class="entry-group-head">' +
+        '<b>' + esc(monthKey) + '</b>' +
+        '<span class="entry-group-meta">' + summary.join(" · ") + '<i class="entry-arrow">▾</i></span>' +
+      '</div>' +
+      '<div class="entry-group-body">' +
+        items.map((item) =>
+          '<article class="card entry-card" data-id="' + esc(item.id) + '">' +
+            '<div class="card-title">' +
+              '<b>' + (esc(item.date) || "未填日期") + '</b>' +
+              '<span><i class="badge">' + esc(item.kind) + '</i> ' + (esc(item.note) || esc(item.target) || "") + '</span>' +
+            '</div>' +
+            '<div class="num"><span class="mini-label">金额</span><b>' + money(item.amount) + '</b></div>' +
+            '<div class="num"><span class="mini-label">去向</span><b>' + (esc(item.target) || "-") + '</b></div>' +
+            '<div class="num"><span class="mini-label">渠道</span><b>' + (esc(item.channel) || "-") + '</b></div>' +
+            '<div class="num"><span class="mini-label">备注</span><b>' + (item.note ? "有" : "-") + '</b></div>' +
+          '</article>'
+        ).join("") +
+      '</div>';
+
+    groupEl.querySelector(".entry-group-head").addEventListener("click", () => {
+      groupEl.classList.toggle("closed");
+    });
+    groupEl.querySelectorAll(".entry-card").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openEntryEditor(card.dataset.id);
+      });
+    });
+
+    list.appendChild(groupEl);
   });
 }
 
@@ -1368,23 +1418,25 @@ function saveAllocation() {
 
   saveData();
   allocState.dirty = false;
-  var msg = result.allocatedTotal > 0
-    ? "已保存本月计划：计划投资 " + money(result.allocatedTotal) + "。实际执行后可在随手记记录。"
-    : "已保存本月计划：本月建议保留现金。实际执行后可在随手记记录。";
+  var amount = result.allocatedTotal;
   var msgEl = document.querySelector("#allocSaveMsg");
   msgEl.style.display = "block";
-  msgEl.textContent = msg;
-
-  // 跳转到月度 Tab
-  setTimeout(function () {
+  msgEl.innerHTML =
+    '<span class="alloc-save-ok">' +
+    (amount > 0
+      ? "✓ 已保存：计划投资 <b>" + money(amount) + "</b>"
+      : "✓ 已保存：本月建议保留现金") +
+    '</span>' +
+    '<button class="alloc-goto-monthly" type="button">去月度复盘 →</button>';
+  document.querySelector(".alloc-goto-monthly").addEventListener("click", function () {
     document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
     document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
-    var monthlyTab = document.querySelector('[data-view="monthly"]');
-    if (monthlyTab) monthlyTab.classList.add("active");
-    var monthlyView = document.querySelector("#monthly");
-    if (monthlyView) monthlyView.classList.add("active");
+    var tab = document.querySelector('[data-view="monthly"]');
+    if (tab) tab.classList.add("active");
+    var view = document.querySelector("#monthly");
+    if (view) view.classList.add("active");
     render();
-  }, 800);
+  });
 }
 
 var allocRebuildTimer = null;
@@ -1454,7 +1506,8 @@ function fieldsToHtml(fields, values) {
     if (field.type === "textarea") {
       return `<div class="field wide"><label>${safeLabel}</label><textarea name="${safeKey}" rows="3">${safeValue}</textarea></div>`;
     }
-    return `<div class="field"><label>${safeLabel}</label><input name="${safeKey}" type="${esc(field.type || "text")}" step="0.01" value="${safeValue}"></div>`;
+    const readonlyAttr = field.readonly ? ' readonly style="background:#f9fafb;color:#9ca3af"' : "";
+    return `<div class="field"><label>${safeLabel}</label><input name="${safeKey}" type="${esc(field.type || "text")}" step="0.01" value="${safeValue}"${readonlyAttr}></div>`;
   }).join("");
 }
 
@@ -1499,17 +1552,23 @@ function openAssetEditor(id) {
 
 function openMonthEditor(id) {
   const isNew = !id;
-  const item = isNew ? { id: crypto.randomUUID(), month: currentMonth(), income: 0, expense: 0, invested: 0, monthEndAssets: 0, specRatio: 0, note: "" } : data.monthly.find((x) => x.id === id);
+  const raw = isNew ? { id: crypto.randomUUID(), month: currentMonth(), income: 0, expense: 0, invested: 0, monthEndAssets: 0, specRatio: 0, note: "" } : data.monthly.find((x) => x.id === id);
+  // 储蓄率：编辑时显示计算值（%），保存时不写回（由 income/invested 推算），只读展示
+  const savingRateDisplay = numberValue(raw.income) > 0
+    ? ((numberValue(raw.invested) / numberValue(raw.income)) * 100).toFixed(1)
+    : "0.0";
+  const item = { ...raw, _savingRateDisplay: savingRateDisplay };
   openEditor({
     title: isNew ? "新增月份" : "编辑月度复盘",
     isNew,
     item,
     collection: "monthly",
     fields: [
-      { key: "month", label: "月份（如 2026/5）" },
+      { key: "month", label: "月份（如 2026/6）" },
       { key: "income", label: "月收入", type: "number" },
       { key: "expense", label: "月固定支出", type: "number" },
-      { key: "invested", label: "实际投入", type: "number" },
+      { key: "invested", label: "实际投入（填完自动算储蓄率）", type: "number" },
+      { key: "_savingRateDisplay", label: "储蓄率（%，自动计算，不用填）", type: "text", readonly: true },
       { key: "monthEndAssets", label: "月末总资产", type: "number" },
       { key: "specRatio", label: "投机层占比（0.10=10%）", type: "number" },
       { key: "note", label: "备注", type: "textarea" },
@@ -1684,6 +1743,7 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
   const form = new FormData(event.currentTarget);
   const updated = { ...editing.item };
   editing.fields.forEach((field) => {
+    if (field.key.startsWith("_") || field.readonly) return; // 内部展示字段不写入
     const raw = form.get(field.key);
     if (field.pctInput) {
       updated[field.key] = numberValue(raw) / 100;
