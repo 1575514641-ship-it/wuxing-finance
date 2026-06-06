@@ -6,7 +6,7 @@
 - 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`supabase.js`。
 - 线上地址：https://www0706.netlify.app/
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前版本：v7.6。
+- 当前版本：v7.8。
 
 ## 运行与验证
 
@@ -69,15 +69,17 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - `syncBufferDestinations(assets)`：兼容旧 name 暂存去向并同步到 `bufferDestinationId`。
 - `computeEffectiveTargets(assets)`：计算含暂存汇入后的有效目标；资产页和分配页都依赖它。
 - `calcAllocation(inputs)`：核心分配引擎。
-- `calcFire(inputs)`：FIRE 测算纯函数，不读写 data。
+- `calcFire(inputs)`：FIRE 测算纯函数，不读写 data；含达成日预测、灵敏度、目标线计算。
+- `projectMonthsToTarget(...)`：月度复利滚动求达成月数；目标随通胀上移，80 年内不可达返回 `reachable:false`。
+- `fireHistorySeries()` / `drawFireChart(...)`：从月度 `monthEndAssets` 取历史净值，纯 SVG 画历史实线 + 预测虚线 + 目标线。
 
 ## 当前主要功能
 
 - 资产页：显示当前占比/归一化目标；暂存接收方额外显示「含暂存后」有效目标。
 - 分配页：输入收入、支出、预留、储蓄率，生成本月建议；显示工资到账操作清单。
 - 月度页：计划投资和实际投入分开显示；若计划含暂存，显示「含暂存」。
-- 规则页：套用 v7 配置、出海解锁暂存、查看执行纪律。
-- FIRE 页：按今天购买力和目标年龄名义金额分别展示 4%/3.5%/3% 三档线。
+- 规则页：套用 v7 配置、出海解锁暂存、执行手册（行为铁律、QDII 溢价规则、推荐产品表、出国前清单、出国后路线、费率税收速查）。
+- FIRE 页：按今天购买力和目标年龄名义金额分别展示 4%/3.5%/3% 三档线；并有「FIRE 仪表盘」——预计达成日（基于当前净值+每月定投+预期收益率滚动到 3.5% 名义目标）、灵敏度提示（每月多投 ¥1000 / 收益率 +1% 各提前多久）、净值增长曲线（历史实线 + 预测虚线 + 目标线，纯 SVG）。每月定投留空时按月度历史 `invested/plannedInvested` 平均值估算。
 
 ## 不要做
 

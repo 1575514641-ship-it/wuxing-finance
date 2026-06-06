@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.7</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.9</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -275,6 +275,14 @@
             <label for="fireSupplementIncome">半 FIRE 后年补充收入</label>
             <input id="fireSupplementIncome" type="text" inputmode="decimal" value="60000">
           </div>
+          <div class="alloc-field">
+            <label for="fireExpectedReturn">预期名义收益率（%）</label>
+            <input id="fireExpectedReturn" type="text" inputmode="decimal" value="7">
+          </div>
+          <div class="alloc-field">
+            <label for="fireMonthlyContribution">每月定投（留空=按历史估算）</label>
+            <input id="fireMonthlyContribution" type="text" inputmode="decimal" placeholder="自动">
+          </div>
         </div>
 
         <div id="fireResult" class="alloc-result fire-result">
@@ -303,7 +311,24 @@
             <div class="progress-bar"><i id="fireProgressBar"></i></div>
           </div>
 
-          <small class="fire-note">25 倍（4%）是最低自由线，不是安全感本身。3% 安心线才是从容半 FIRE 的目标。美国数据，中国市场未必完全适用，仅作参考。</small>
+          <div class="fire-eta-card">
+            <span>预计达成（3.5% 稳健线名义目标）</span>
+            <strong id="fireEtaText">—</strong>
+            <small id="fireEtaSub">填入每月定投和预期收益率后测算</small>
+          </div>
+
+          <div id="fireSensitivity" class="fire-sensitivity"></div>
+
+          <div class="fire-chart-wrap">
+            <div class="fire-chart-legend">
+              <span><i class="lg-history"></i>历史净值</span>
+              <span><i class="lg-forecast"></i>预测增长</span>
+              <span><i class="lg-target"></i>目标线</span>
+            </div>
+            <div id="fireChart" class="fire-chart"></div>
+          </div>
+
+          <small class="fire-note">25 倍（4%）是最低自由线，不是安全感本身。3% 安心线才是从容半 FIRE 的目标。美国数据，中国市场未必完全适用，仅作参考。预测线假设每月定投不变、收益率恒定，真实路径会有波动，仅供参考方向。</small>
         </div>
       </section>
     </main>
@@ -347,14 +372,11 @@
     </form>
   </dialog>
 
-  <script src="./supabase.js?v=7-7"></script>
+  <script src="./sync.js?v=7-9"></script>
   <script>
-    // 自动配置 Supabase 云同步（个人使用，anon key 可公开）
-    supabase.setConfig(
-      "https://qzligsdeynmobiekudae.supabase.co/rest/v1/",
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF6bGlnc2RleW5tb2JpZWt1ZGFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MDQ3MjAsImV4cCI6MjA5NTI4MDcyMH0.xP6Q2rKhyBVhsvY0xyXzf2eXjOp-zK9kvVASZ9uNiDk"
-    );
+    // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
+    supabase.setConfig("https://wuxing-finance-sync.www040706.workers.dev");
   </script>
-  <script src="./app.js?v=7-7"></script>
+  <script src="./app.js?v=7-9"></script>
 </body>
 </html>
