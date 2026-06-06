@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.9</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.10</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -130,6 +130,26 @@
           </div>
           <button id="addMonthBtn" class="primary-btn">新增月份</button>
         </div>
+
+        <div id="emergencyBar" class="emergency-bar-wrap">
+          <div class="emergency-bar-header">
+            <span class="emergency-bar-text">应急金 ¥0 / ¥20,000</span>
+            <button class="emergency-edit ghost-btn">目标 ¥20,000</button>
+          </div>
+          <div class="progress-bar emergency-progress">
+            <i class="emergency-bar-fill"></i>
+          </div>
+          <small class="emergency-bar-sub">未达标前优先补应急金，投资按 50% 力度执行</small>
+        </div>
+
+        <div class="fire-chart-wrap" style="margin-bottom:12px">
+          <div class="fire-chart-legend">
+            <span><i class="lg-history"></i>月储蓄率</span>
+            <span><i class="lg-target"></i>目标 35%</span>
+          </div>
+          <div id="savingChart" class="fire-chart"></div>
+        </div>
+
         <div id="monthlyList" class="card-list"></div>
       </section>
 
@@ -372,11 +392,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-9"></script>
+  <script src="./sync.js?v=7-10"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-9"></script>
+  <script src="./app.js?v=7-10"></script>
 </body>
 </html>

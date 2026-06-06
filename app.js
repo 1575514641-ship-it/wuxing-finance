@@ -40,6 +40,9 @@ const defaultData = {
   })),
   monthly: makeDefaultMonths(),
   entries: [],
+  settings: {
+    emergencyGoal: 20000,
+  },
 };
 
 function makeDefaultMonths() {
@@ -116,7 +119,6 @@ function normalizeData(input) {
   const fallback = structuredClone(defaultData);
   const source = input && typeof input === "object" ? input : {};
   const assets = Array.isArray(source.assets) ? source.assets : fallback.assets;
-  // 兼容老数据：缺 status / bufferDestinationId 时回填默认值
   assets.forEach((a) => {
     if (a && typeof a === "object") {
       if (!a.id) a.id = crypto.randomUUID();
@@ -126,10 +128,14 @@ function normalizeData(input) {
     }
   });
   syncBufferDestinations(assets);
+  const srcSettings = source.settings && typeof source.settings === "object" ? source.settings : {};
   return {
     assets,
     monthly: Array.isArray(source.monthly) ? source.monthly : fallback.monthly,
     entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
+    settings: {
+      emergencyGoal: numberValue(srcSettings.emergencyGoal) || fallback.settings.emergencyGoal,
+    },
   };
 }
 
@@ -420,7 +426,11 @@ function renderAssets() {
       const gapTarget = numberValue(effectiveTargets[item.id]) || normTarget;
       const gap = ratio - gapTarget;
       if (gap > 0.05) return `${esc(item.name)} 偏高 ${pct(gap)}，下月少投。`;
-      if (gap < -0.05) return `${esc(item.name)} 偏低 ${pct(Math.abs(gap))}，可优先补。`;
+      if (gap < -0.05) {
+        // 建议补仓金额：把该资产补到目标占比所需买入额
+        var suggestAmt = t.value > 0 ? Math.round((gapTarget - ratio) * t.value) : 0;
+        return `${esc(item.name)} 偏低 ${pct(Math.abs(gap))}，建议补 ${suggestAmt > 0 ? money(suggestAmt) : "—"}。`;
+      }
       return null;
     })
     .filter(Boolean)
@@ -433,6 +443,13 @@ function renderMonthly() {
   list.innerHTML = "";
   const nowDate = new Date();
   const currentMonthKey = nowDate.getFullYear() + "/" + (nowDate.getMonth() + 1);
+
+  // ---- 应急金进度条 ----
+  renderEmergencyBar();
+
+  // ---- 储蓄率趋势图 ----
+  renderSavingChart();
+
   data.monthly.forEach((item) => {
     const income = numberValue(item.income);
     const expense = numberValue(item.expense);
@@ -472,6 +489,84 @@ function renderMonthly() {
   if (currentCard) {
     requestAnimationFrame(() => currentCard.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   }
+}
+
+function renderEmergencyBar() {
+  var el = document.querySelector("#emergencyBar");
+  if (!el) return;
+  var goal = numberValue(data.settings && data.settings.emergencyGoal) || 20000;
+  // 应急金 = 现金层资产市值之和（货币基金）
+  var cashValue = data.assets
+    .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
+    .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  var progress = goal > 0 ? Math.min(cashValue / goal, 1) : 0;
+  var reached = cashValue >= goal;
+  var barEl = el.querySelector(".emergency-bar-fill");
+  var textEl = el.querySelector(".emergency-bar-text");
+  var subEl = el.querySelector(".emergency-bar-sub");
+  if (barEl) barEl.style.width = (progress * 100).toFixed(1) + "%";
+  if (barEl) barEl.className = "emergency-bar-fill" + (reached ? " reached" : "");
+  if (textEl) textEl.textContent = reached
+    ? "应急金已达标 ✓"
+    : "应急金 " + money(cashValue) + " / " + money(goal);
+  if (subEl) subEl.textContent = reached
+    ? "可以开始按完整配置投资"
+    : "未达标前优先补应急金，投资按 50% 力度执行";
+  // 目标可点击编辑
+  var editEl = el.querySelector(".emergency-edit");
+  if (editEl) {
+    editEl.textContent = "目标 " + money(goal);
+    editEl.onclick = function () {
+      var input = prompt("设置应急金目标金额（元）", goal);
+      var val = parseFloat(input);
+      if (!isNaN(val) && val > 0) {
+        if (!data.settings) data.settings = {};
+        data.settings.emergencyGoal = Math.round(val);
+        saveData();
+        renderEmergencyBar();
+      }
+    };
+  }
+}
+
+function renderSavingChart() {
+  var el = document.querySelector("#savingChart");
+  if (!el) return;
+  var nowIdx = monthIndex(currentMonth());
+  var raw = data.monthly
+    .filter(function (m) {
+      var i = monthIndex(m.month);
+      return Number.isFinite(i) && i <= nowIdx && numberValue(m.income) > 0;
+    })
+    .map(function (m) {
+      var income = numberValue(m.income);
+      var invested = numberValue(m.invested) || numberValue(m.plannedInvested);
+      var rate = income > 0 ? invested / income : 0;
+      var mo = String(m.month).replace(/^\d+\//, "") + "月";
+      return { value: rate, label: mo };
+    })
+    .sort(function (a, b) { return monthIndex(a.month) - monthIndex(b.month); })
+    .slice(-12);
+
+  // 只在首尾和每隔 3 个显示标签，防止拥挤
+  var series = raw.map(function(s, i) {
+    var showLabel = i === 0 || i === raw.length - 1 || (raw.length <= 6) || i % 3 === 0;
+    return { value: s.value, label: showLabel ? s.label : null };
+  });
+
+  var maxRate = Math.max(Math.max.apply(null, series.map(function(s){return s.value;})), 0.5);
+
+  drawLineChart(el, series, {
+    H: 100, padL: 30, padR: 8, padT: 8, padB: 20,
+    maxVal: maxRate,
+    targetVal: 0.35,
+    targetLabel: "35%",
+    emptyText: "填入 2 个月以上的收入和实际投入后显示储蓄率趋势。",
+    yLabels: [
+      { value: maxRate, label: Math.round(maxRate * 100) + "%" },
+      { value: 0, label: "0%" },
+    ],
+  });
 }
 
 function renderEntries() {
@@ -714,85 +809,132 @@ function renderFireDashboard(result) {
   drawFireChart(chartEl, result);
 }
 
-// 用纯 SVG 画净值曲线：实线=历史月末资产，虚线=从今天起的预测增长，水平线=目标
+// 通用折线图：series=[{label,value}]，opts={W,H,padL,padR,padT,padB,maxVal,targetVal,targetLabel,emptyText,dotClass,lineClass,forecastSeries,forecastClass,dotForecastClass}
+function drawLineChart(el, series, opts) {
+  if (!el) return;
+  var o = opts || {};
+  var W = o.W || 320, H = o.H || 120;
+  var padL = o.padL !== undefined ? o.padL : 28;
+  var padR = o.padR !== undefined ? o.padR : 8;
+  var padT = o.padT !== undefined ? o.padT : 10;
+  var padB = o.padB !== undefined ? o.padB : 22;
+  var plotW = W - padL - padR, plotH = H - padT - padB;
+
+  if (!series || series.length < 2) {
+    el.innerHTML = '<div class="fire-chart-empty">' + esc(o.emptyText || "暂无数据") + '</div>';
+    return;
+  }
+
+  var maxVal = o.maxVal || Math.max.apply(null, series.map(function(s){return s.value;})) * 1.1;
+  if (maxVal <= 0) maxVal = 1;
+
+  var x = function(i) { return padL + (i / (series.length - 1 + (o.forecastSeries ? o.forecastSeries.length : 0))) * plotW; };
+  var xF = function(i) { return padL + ((series.length - 1 + i) / (series.length - 1 + (o.forecastSeries ? o.forecastSeries.length - 1 : 0))) * plotW; };
+  var y = function(v) { return padT + plotH - (Math.max(v, 0) / maxVal) * plotH; };
+
+  var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="fire-svg" preserveAspectRatio="none">';
+
+  // 目标水平线
+  if (o.targetVal) {
+    var ty = y(o.targetVal);
+    svg += '<line x1="' + padL + '" y1="' + ty.toFixed(1) + '" x2="' + (W-padR) + '" y2="' + ty.toFixed(1) + '" class="fire-target-line"/>';
+    if (o.targetLabel) {
+      svg += '<text x="' + (padL-2) + '" y="' + (ty+3).toFixed(1) + '" class="fire-axis-label" text-anchor="end">' + esc(o.targetLabel) + '</text>';
+    }
+  }
+
+  // 预测线
+  if (o.forecastSeries && o.forecastSeries.length > 1) {
+    var fcPts = o.forecastSeries.map(function(s,i){return xF(i).toFixed(1)+','+y(s.value).toFixed(1);}).join(' ');
+    svg += '<polyline points="' + fcPts + '" class="' + (o.forecastClass||'fire-forecast-line') + '" fill="none"/>';
+  }
+
+  // 主折线
+  var pts = series.map(function(s,i){return x(i).toFixed(1)+','+y(s.value).toFixed(1);}).join(' ');
+  svg += '<polyline points="' + pts + '" class="' + (o.lineClass||'fire-history-line') + '" fill="none"/>';
+
+  // 端点 + x 轴标签
+  series.forEach(function(s, i) {
+    var cx = x(i).toFixed(1), cy = y(s.value).toFixed(1);
+    var reached = o.targetVal && s.value >= o.targetVal;
+    svg += '<circle cx="' + cx + '" cy="' + cy + '" r="3" class="' + (reached ? 'fire-dot-target' : (o.dotClass||'fire-dot-now')) + '"/>';
+    if (s.label) {
+      svg += '<text x="' + cx + '" y="' + (H-5) + '" class="fire-axis-label" text-anchor="middle">' + esc(s.label) + '</text>';
+    }
+  });
+
+  // y轴刻度
+  if (o.yLabels) {
+    o.yLabels.forEach(function(l) {
+      var ly = y(l.value);
+      svg += '<text x="' + (padL-2) + '" y="' + (ly+3).toFixed(1) + '" class="fire-axis-label" text-anchor="end">' + esc(l.label) + '</text>';
+    });
+  }
+
+  // 特殊端点（FIRE 达成点）
+  if (o.specialDot) {
+    svg += '<circle cx="' + o.specialDot.cx.toFixed(1) + '" cy="' + o.specialDot.cy.toFixed(1) + '" r="4" class="fire-dot-target"/>';
+    if (o.specialDot.label) {
+      svg += '<text x="' + Math.min(o.specialDot.cx, W-padR).toFixed(1) + '" y="' + (H-5) + '" class="fire-axis-label" text-anchor="end">' + esc(o.specialDot.label) + '</text>';
+    }
+  }
+
+  svg += '</svg>';
+  el.innerHTML = svg;
+}
+
+// FIRE 净值曲线：调用通用 drawLineChart
 function drawFireChart(el, result) {
   var history = fireHistorySeries();
   var proj = result.projection;
-  var W = 320, H = 150, padL = 8, padR = 8, padT = 12, padB = 22;
-  var plotW = W - padL - padR, plotH = H - padT - padB;
 
   if (!history.length && result.totalAssets <= 0) {
     el.innerHTML = '<div class="fire-chart-empty">在「月度」里填月末总资产后，这里会画出净值增长曲线和达成预测线。</div>';
     return;
   }
 
-  // 预测点：以最后一个历史点（或今天的总资产）为起点，按月滚动到达成或 80 年上限
-  var startValue = result.totalAssets;
   var monthlyRate = Math.pow(1 + result.expectedAnnual, 1 / 12) - 1;
   var horizon = proj && proj.reachable && Number.isFinite(proj.months) ? proj.months : 30 * 12;
   horizon = Math.max(Math.min(horizon, 80 * 12), 12);
-  var forecast = [];
-  var fv = startValue;
-  forecast.push({ t: 0, value: fv });
-  var step = Math.max(Math.round(horizon / 48), 1); // 最多约 48 个采样点
+  var step = Math.max(Math.round(horizon / 48), 1);
+  var fv = result.totalAssets;
+  var forecast = [{ value: fv }];
   for (var m = 1; m <= horizon; m++) {
     fv = fv * (1 + monthlyRate) + result.monthlyContribution;
-    if (m % step === 0 || m === horizon) forecast.push({ t: m, value: fv });
+    if (m % step === 0 || m === horizon) forecast.push({ value: fv });
   }
 
-  // 坐标系：x 轴从最早历史月到达成月；y 轴 0~目标(留 10% 余量)
-  var histSpan = history.length ? (history[history.length - 1].idx - history[0].idx) : 0;
-  var totalSpanMonths = histSpan + horizon;
-  if (totalSpanMonths <= 0) totalSpanMonths = horizon || 12;
+  var histSeries = history.map(function(h, i) {
+    return { value: h.value, label: i === 0 ? h.month.replace(/^\d+\//, "") + "月" : (i === history.length - 1 ? "今天" : null) };
+  });
+  if (!histSeries.length) histSeries = [{ value: result.totalAssets, label: "今天" }];
+
   var maxVal = Math.max(result.targetNominal, fv, result.totalAssets) * 1.08;
-  if (maxVal <= 0) maxVal = 1;
 
-  var x = function (monthsFromStart) { return padL + (monthsFromStart / totalSpanMonths) * plotW; };
-  var y = function (v) { return padT + plotH - (Math.max(v, 0) / maxVal) * plotH; };
-
-  var histStartIdx = history.length ? history[0].idx : monthIndex(currentMonth());
-  var todayOffset = monthIndex(currentMonth()) - histStartIdx; // 今天在 x 轴上的月偏移
-  if (todayOffset < 0) todayOffset = histSpan;
-
-  // 历史折线
-  var histPts = history.map(function (h) { return x(h.idx - histStartIdx) + "," + y(h.value); }).join(" ");
-  // 预测折线（从今天偏移开始）
-  var fcPts = forecast.map(function (f) { return x(todayOffset + f.t) + "," + y(f.value); }).join(" ");
-  // 目标水平线
-  var ty = y(result.targetNominal);
-
-  var svg = '<svg viewBox="0 0 ' + W + " " + H + '" class="fire-svg" preserveAspectRatio="none" role="img" aria-label="净值增长曲线">';
-  // 目标线
-  svg += '<line x1="' + padL + '" y1="' + ty.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + ty.toFixed(1) + '" class="fire-target-line" />';
-  svg += '<text x="' + (W - padR) + '" y="' + Math.max(ty - 4, 10).toFixed(1) + '" class="fire-axis-label" text-anchor="end">目标 ' + esc(fireMoney(result.targetNominal)) + "</text>";
-  // 预测线（虚线）
-  if (forecast.length > 1) {
-    svg += '<polyline points="' + fcPts + '" class="fire-forecast-line" fill="none" />';
-  }
-  // 历史线（实线 + 端点）
-  if (history.length > 1) {
-    svg += '<polyline points="' + histPts + '" class="fire-history-line" fill="none" />';
-  }
-  if (history.length) {
-    var last = history[history.length - 1];
-    svg += '<circle cx="' + x(last.idx - histStartIdx).toFixed(1) + '" cy="' + y(last.value).toFixed(1) + '" r="3.5" class="fire-dot-now" />';
-  } else {
-    svg += '<circle cx="' + x(todayOffset).toFixed(1) + '" cy="' + y(result.totalAssets).toFixed(1) + '" r="3.5" class="fire-dot-now" />';
-  }
-  // 达成点
+  // 达成点坐标（在预测线末段）
+  var specialDot = null;
   if (proj && proj.reachable && proj.months > 0) {
-    svg += '<circle cx="' + x(todayOffset + proj.months).toFixed(1) + '" cy="' + ty.toFixed(1) + '" r="3.5" class="fire-dot-target" />';
+    var W = 320, padL = 28, padR = 8;
+    var totalPts = histSeries.length - 1 + forecast.length - 1;
+    var fcIdx = forecast.length - 1;
+    var cx = totalPts > 0 ? padL + ((histSeries.length - 1 + fcIdx) / totalPts) * (W - padL - padR) : W - padR;
+    var ty = 10 + (120 - 10 - 22) - (Math.max(result.targetNominal, 0) / maxVal) * (120 - 10 - 22);
+    specialDot = { cx: cx, cy: ty, label: monthsToDateLabel(proj.months) };
   }
-  // x 轴标签：今天 / 达成
-  svg += '<text x="' + x(todayOffset).toFixed(1) + '" y="' + (H - 6) + '" class="fire-axis-label" text-anchor="middle">今天</text>';
-  if (proj && proj.reachable && proj.months > 0) {
-    svg += '<text x="' + Math.min(x(todayOffset + proj.months), W - padR).toFixed(1) + '" y="' + (H - 6) + '" class="fire-axis-label" text-anchor="end">' + esc(monthsToDateLabel(proj.months)) + "</text>";
-  }
-  svg += "</svg>";
-  el.innerHTML = svg;
+
+  drawLineChart(el, histSeries, {
+    H: 140, padL: 28,
+    maxVal: maxVal,
+    targetVal: result.targetNominal,
+    targetLabel: "目标",
+    forecastSeries: forecast,
+    emptyText: "在「月度」里填月末总资产后显示曲线。",
+    specialDot: specialDot,
+    yLabels: [
+      { value: result.targetNominal, label: fireMoney(result.targetNominal) },
+    ],
+  });
 }
-
-// ---- 月薪分配 ----
 function monthIndex(month) {
   var parts = String(month || "").split("/").map(Number);
   if (!parts[0] || !parts[1]) return -Infinity;
