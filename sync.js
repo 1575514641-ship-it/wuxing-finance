@@ -83,10 +83,10 @@
     return localStorage.getItem(WORKER_URL_KEY) || "";
   }
 
-  async function workerFetch(path, body) {
-    const base = getWorkerUrl();
+  async function workerFetch(endpoint, body) {
+    const base = getWorkerUrl().replace(/\/+$/, "");
     if (!base) throw new Error("Worker URL 未配置");
-    const res = await fetch(base + path, {
+    const res = await fetch(base + endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -101,7 +101,7 @@
 
   async function loadRecord() {
     const identity = getIdentity();
-    const result = await workerFetch("/sync/load", {
+    const result = await workerFetch("/load", {
       userId: identity.userId,
       secret: identity.secret,
     });
@@ -111,7 +111,7 @@
 
   async function saveRecord(data, updatedAt) {
     const identity = getIdentity();
-    const result = await workerFetch("/sync/save", {
+    const result = await workerFetch("/save", {
       userId: identity.userId,
       secret: identity.secret,
       data,

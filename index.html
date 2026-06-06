@@ -375,7 +375,7 @@
   <script src="./sync.js?v=7-9"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
-    supabase.setConfig("https://wuxing-finance-sync.www040706.workers.dev");
+    supabase.setConfig("/api/sync");
   </script>
   <script src="./app.js?v=7-9"></script>
 </body>
