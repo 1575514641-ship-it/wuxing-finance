@@ -1,0 +1,8 @@
+name = "wuxing-finance-sync"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wuxing-finance-db"
+database_id = "934bae7e-a713-4643-a5d1-385dba89682c"

@@ -3,10 +3,10 @@
 ## 项目边界
 
 - 项目类型：纯静态 PWA，部署到 Netlify，无构建步骤。
-- 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`supabase.js`。
+- 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已废弃）。
 - 线上地址：https://www0706.netlify.app/
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前版本：v7.8。
+- 当前版本：v7.9。
 
 ## 运行与验证
 
@@ -29,7 +29,7 @@
 提交链路：
 
 ```powershell
-git add app.js index.html styles.css sw.js 使用说明.md CLAUDE.md
+git add app.js index.html styles.css sw.js sync.js _redirects CLAUDE.md
 git commit -m "v7.x: ..."
 git -c http.version=HTTP/1.1 -c http.lowSpeedLimit=1 -c http.lowSpeedTime=120 push origin main
 ```
@@ -44,7 +44,7 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 
 ## 资产配置与硬规则
 
-- 不要改 v7 目标占比：现金 10%、防御 22%、生财 22%、成长 36%、投机 10%。
+- 不要改 v7 目标占比（2026-06-07 已更新）：现金 13%（RMB货基8%+USD货基5%buffered）、防御 22%（黄金7%+红利低波7%+纯债8%）、生财 24%（沪深300/A500 17%+中证500 7%）、成长 36%（标普25%+医疗7%+矿股4%）、投机 10%（纳指5%+自选5%）。美元货基和成长/投机层均为 buffered，出海前暂存到 RMB 货基。
 - 投机层市值占总资产 `>= 10%` 时，分配页自动暂停给投机层新增资金；标准模式和修正模式都生效。
 - 不加“忽略一次”按钮。要绕过只能手动改资产 target，这个摩擦是冷静期。
 - QDII/出海后执行资产用 `status: "buffered"` 或 `buffered:*` 暂存到 `bufferDestinationId` 指向的资产。

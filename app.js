@@ -1,21 +1,23 @@
 const STORAGE_KEY = "wuxing-finance-app-v1";
 const META_KEY = "wuxing-finance-meta-v1";
 
-// 22岁外派起步配置：权益重(50%) + 海外重(51%) + USD分仓，对应外派收入和10+年长期持有
-// status: "available" 国内可买；"buffered" 国内阶段暂存到 bufferDestinationId 指向的产品
+// 22岁外派起步配置（2026-06-07 更新）：
+// 出海前 available 层 52%（A股宽基+黄金+纯债+RMB货基）
+// 出海后 buffered 层解锁后权益约 80%，海外宽基主力标普25%+纳指5%+医疗7%
+// 黄金从10%降到7%（估值过高），矿股从7%降到4%（去杠杆），标普从22%升到25%，纯债从5%升到8%，沪深300升到17%
 const BUFFER_DEFAULT_ID = "cash-rmb";
-const BUFFER_DEFAULT = "货币基金"; // 兼容旧数据的名称回退
+const BUFFER_DEFAULT = "货币基金";
 const HALF_FIRE_PLAN = [
-  { id: BUFFER_DEFAULT_ID, layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.05, status: "available" },
-  { id: "cash-usd", layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "available" },
-  { id: "gold-etf", layer: "防御层", element: "金", name: "黄金积存/黄金ETF", type: "黄金类", target: 0.10, status: "available" },
+  { id: BUFFER_DEFAULT_ID, layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.08, status: "available" },
+  { id: "cash-usd", layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "gold-etf", layer: "防御层", element: "金", name: "黄金积存/黄金ETF", type: "黄金类", target: 0.07, status: "available" },
   { id: "dividend-lowvol", layer: "防御层", element: "金", name: "红利低波指数", type: "红利类", target: 0.07, status: "available" },
-  { id: "bond-midlong", layer: "防御层", element: "金", name: "中长期纯债基金", type: "债券类", target: 0.05, status: "available" },
-  { id: "a500-csi300", layer: "生财层", element: "土", name: "沪深300/A500指数", type: "宽基指数", target: 0.15, status: "available" },
+  { id: "bond-midlong", layer: "防御层", element: "金", name: "中长期纯债基金", type: "债券类", target: 0.08, status: "available" },
+  { id: "a500-csi300", layer: "生财层", element: "土", name: "沪深300/A500指数", type: "宽基指数", target: 0.17, status: "available" },
   { id: "csi500", layer: "生财层", element: "土", name: "中证500指数", type: "中盘成长", target: 0.07, status: "available" },
-  { id: "sp500", layer: "成长层", element: "金水", name: "标普500", type: "海外宽基", target: 0.22, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "sp500", layer: "成长层", element: "金水", name: "标普500", type: "海外宽基", target: 0.25, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
   { id: "global-healthcare", layer: "成长层", element: "金水", name: "全球医疗/制药", type: "海外主题", target: 0.07, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "gold-miners", layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.07, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "gold-miners", layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.04, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
   { id: "nasdaq-tech", layer: "投机层", element: "火", name: "纳斯达克100/科技主题", type: "科技成长", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
   { id: "speculative-stock", layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
 ];
