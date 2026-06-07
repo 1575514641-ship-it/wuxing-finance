@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.13</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.14</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -372,6 +372,25 @@
     </form>
   </dialog>
 
+  <dialog id="marketValueDialog" class="mv-dialog">
+    <form method="dialog" id="marketValueForm">
+      <header>
+        <h3>更新市值</h3>
+        <button value="cancel" class="ghost-btn" type="button" id="mvSkipTop">跳过</button>
+      </header>
+      <div class="mv-body">
+        <p id="mvIntro" class="mv-intro"></p>
+        <label for="mvInput" id="mvLabel">当前市值</label>
+        <input id="mvInput" type="number" step="0.01" inputmode="decimal">
+        <p class="mv-hint">默认是「原市值 + 本次投入」的买入当天估算，可改成券商 App 里的实际市值；跳过则不改市值。</p>
+      </div>
+      <footer class="mv-footer">
+        <button value="save" type="submit" class="primary-btn">更新市值</button>
+        <button value="cancel" type="submit" class="ghost-btn">跳过</button>
+      </footer>
+    </form>
+  </dialog>
+
   <dialog id="syncDialog" class="sync-dialog">
     <form method="dialog">
       <header>
@@ -396,11 +415,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-13"></script>
+  <script src="./sync.js?v=7-14"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-13"></script>
+  <script src="./app.js?v=7-14"></script>
 </body>
 </html>

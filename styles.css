@@ -387,6 +387,25 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
   font-size: 14px;
 }
 .field.wide { grid-column: 1 / -1; }
+.field-hint { color: var(--muted); font-size: 11px; line-height: 1.5; opacity: .85; }
+
+/* ---- 市值更新弹窗 ---- */
+.mv-dialog { width: min(420px, calc(100vw - 24px)); }
+.mv-body { padding: 16px; display: grid; gap: 8px; }
+.mv-intro { font-size: 13px; line-height: 1.6; color: var(--ink); margin: 0; }
+.mv-body label { color: var(--muted); font-size: 12px; font-weight: 500; }
+.mv-body input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  min-height: 42px;
+  padding: 8px 12px;
+  font-size: 18px;
+  color: var(--ink);
+}
+.mv-hint { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
+/* footer 用 row-reverse：DOM 里 save 在前(回车默认确认)，视觉上仍是跳过在左、更新在右 */
+.mv-footer { flex-direction: row-reverse; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 

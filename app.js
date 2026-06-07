@@ -1520,6 +1520,7 @@ function fieldsToHtml(fields, values) {
     const safeKey = esc(field.key);
     const safeLabel = esc(field.label);
     const safeValue = esc(value);
+    const hintHtml = field.hint ? `<small class="field-hint">${esc(field.hint)}</small>` : "";
     if (field.type === "select") {
       return `<div class="field"><label>${safeLabel}</label><select name="${safeKey}">
         ${field.options.map((o) => {
@@ -1527,10 +1528,10 @@ function fieldsToHtml(fields, values) {
           const optionLabel = typeof o === "object" ? o.label : o;
           return `<option value="${esc(optionValue)}" ${String(optionValue) === String(value) ? "selected" : ""}>${esc(optionLabel)}</option>`;
         }).join("")}
-      </select></div>`;
+      </select>${hintHtml}</div>`;
     }
     if (field.type === "textarea") {
-      return `<div class="field wide"><label>${safeLabel}</label><textarea name="${safeKey}" rows="3">${safeValue}</textarea></div>`;
+      return `<div class="field wide"><label>${safeLabel}</label><textarea name="${safeKey}" rows="3">${safeValue}</textarea>${hintHtml}</div>`;
     }
     const readonlyAttr = field.readonly ? ' readonly style="background:#f9fafb;color:#9ca3af"' : "";
     const isNumber = field.type === "number";
@@ -1549,7 +1550,7 @@ function fieldsToHtml(fields, values) {
         .join("");
       datalistHtml = `<datalist id="${listId}">${opts}</datalist>`;
     }
-    return `<div class="field"><label>${safeLabel}</label><input name="${safeKey}" type="${inputType}"${stepAttr} value="${safeValue}"${listAttr}${readonlyAttr}>${datalistHtml}</div>`;
+    return `<div class="field"><label>${safeLabel}</label><input name="${safeKey}" type="${inputType}"${stepAttr} value="${safeValue}"${listAttr}${readonlyAttr}>${datalistHtml}${hintHtml}</div>`;
   }).join("");
 }
 
@@ -1607,7 +1608,9 @@ function openMonthEditor(id) {
   const savingRateDisplay = numberValue(raw.income) > 0
     ? ((numberValue(raw.invested) / numberValue(raw.income)) * 100).toFixed(1)
     : "0.0";
-  const item = { ...raw, _savingRateDisplay: savingRateDisplay };
+  // 投机层占比：按资产页当前持仓实时计算，只读展示，无需手填
+  const specRatioDisplay = pct(totals().specRatio);
+  const item = { ...raw, _savingRateDisplay: savingRateDisplay, _specRatioDisplay: specRatioDisplay };
   openEditor({
     title: isNew ? "新增月份" : "编辑月度复盘",
     isNew,
@@ -1617,10 +1620,10 @@ function openMonthEditor(id) {
       { key: "month", label: "月份（如 2026/6）" },
       { key: "income", label: "月收入", type: "number" },
       { key: "expense", label: "月固定支出", type: "number" },
-      { key: "invested", label: "实际投入（填完自动算储蓄率）", type: "number" },
+      { key: "invested", label: "实际投入", type: "number", hint: "记一笔里的「投资」会自动累加到这里，一般不用手填" },
       { key: "_savingRateDisplay", label: "储蓄率（%，自动计算，不用填）", type: "text", readonly: true },
       { key: "monthEndAssets", label: "月末总资产", type: "number" },
-      { key: "specRatio", label: "投机层占比（0.10=10%）", type: "number" },
+      { key: "_specRatioDisplay", label: "投机层占比", type: "text", readonly: true, hint: "按资产页当前持仓自动计算，不用填" },
       { key: "note", label: "备注", type: "textarea" },
     ],
   });
@@ -1856,25 +1859,40 @@ function applyEntryLink(entry) {
   return asset;
 }
 
-// 联动后提示更新市值：预填"原市值+本次投入"作为买入当天的诚实估算，用户可改成券商实际值
+// 联动后提示更新市值：用 App 内弹窗，预填"原市值+本次投入"作为买入当天的诚实估算，
+// 用户可改成券商实际值。返回 Promise<boolean>（true=市值已更新）。
 function promptUpdateMarketValue(asset, addedAmount) {
-  if (!asset) return false;
-  var suggested = Math.round(numberValue(asset.value) + numberValue(addedAmount));
-  var input = prompt(
-    "已把 " + money(addedAmount) + " 计入「" + asset.name + "」的累计投入和本月实际投入。\n\n" +
-    "顺便更新一下它的当前市值吗？\n" +
-    "（默认填的是「原市值+本次投入」的买入当天估算，你也可以改成券商 App 里的实际市值；取消则不改市值）",
-    suggested
-  );
-  if (input === null) return false;
-  var val = parseFloat(input);
-  if (isNaN(val) || val < 0) return false;
-  asset.value = Math.round(val);
-  asset.updated = today();
-  return true;
+  return new Promise(function (resolve) {
+    var dlg = document.querySelector("#marketValueDialog");
+    var input = document.querySelector("#mvInput");
+    if (!dlg || !input || !asset) { resolve(false); return; }
+    var suggested = Math.round(numberValue(asset.value) + numberValue(addedAmount));
+    document.querySelector("#mvIntro").textContent =
+      "已把 " + money(addedAmount) + " 计入「" + asset.name + "」的累计投入和本月实际投入。顺便更新一下它的当前市值吗？";
+    document.querySelector("#mvLabel").textContent = asset.name + " 当前市值";
+    input.value = suggested;
+    // <form method="dialog"> 提交后 dialog.returnValue = 按钮的 value，并触发 close
+    var onClose = function () {
+      if (dlg.returnValue !== "save") { resolve(false); return; }
+      var val = parseFloat(input.value);
+      if (isNaN(val) || val < 0) { resolve(false); return; }
+      asset.value = Math.round(val);
+      asset.updated = today();
+      resolve(true);
+    };
+    dlg.addEventListener("close", onClose, { once: true });
+    var skipTop = document.querySelector("#mvSkipTop");
+    if (skipTop) {
+      skipTop.onclick = function () { dlg.close("cancel"); };
+    }
+    dlg.returnValue = "";
+    dlg.showModal();
+    input.focus();
+    input.select();
+  });
 }
 
-document.querySelector("#editorForm").addEventListener("submit", (event) => {
+document.querySelector("#editorForm").addEventListener("submit", async (event) => {
   if (event.submitter?.value !== "save") return;
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -1902,6 +1920,11 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
     linkedAmount = numberValue(updated.linkedAmount);
     localStorage.setItem(LAST_KIND_KEY, String(updated.kind || "投资")); // 记住类型作下次默认
   } else {
+    if (editing.collection === "monthly") {
+      // 投机层占比按当前持仓自动写入；清理只读展示用的下划线字段，避免脏字段被持久化
+      updated.specRatio = totals().specRatio;
+      Object.keys(updated).forEach((k) => { if (k.charAt(0) === "_") delete updated[k]; });
+    }
     if (index >= 0) collection[index] = updated;
     else collection.push(updated);
   }
@@ -1911,7 +1934,7 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
   render();
   // 联动到具体资产时，提示顺手更新市值（放在 render 后，对话框已关）
   if (linkedAsset && linkedAmount > 0) {
-    const changed = promptUpdateMarketValue(linkedAsset, linkedAmount);
+    const changed = await promptUpdateMarketValue(linkedAsset, linkedAmount);
     if (changed) { saveData(); render(); }
   }
 });
