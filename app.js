@@ -1,5 +1,6 @@
 const STORAGE_KEY = "wuxing-finance-app-v1";
 const META_KEY = "wuxing-finance-meta-v1";
+const LAST_KIND_KEY = "wuxing-last-entry-kind";
 
 // 22岁外派起步配置（2026-06-07 更新）：
 // 出海前 available 层 52%（A股宽基+黄金+纯债+RMB货基）
@@ -42,6 +43,7 @@ const defaultData = {
   entries: [],
   settings: {
     emergencyGoal: 20000,
+    linkInvestEntry: true,
   },
 };
 
@@ -136,6 +138,7 @@ function normalizeData(input) {
     entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
     settings: {
       emergencyGoal: numberValue(srcSettings.emergencyGoal) || fallback.settings.emergencyGoal,
+      linkInvestEntry: typeof srcSettings.linkInvestEntry === "boolean" ? srcSettings.linkInvestEntry : true,
     },
   };
 }
@@ -593,6 +596,9 @@ function renderSavingChart() {
 function renderEntries() {
   const list = document.querySelector("#entryList");
   list.innerHTML = "";
+  // 同步联动开关的勾选状态（放在提前 return 之前，保证空记录时也同步）
+  const linkToggle = document.querySelector("#linkInvestToggle");
+  if (linkToggle) linkToggle.checked = isLinkEnabled();
   const sorted = [...data.entries].sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
   if (!sorted.length) {
@@ -1497,6 +1503,15 @@ document.addEventListener("DOMContentLoaded", function () {
     var input = document.querySelector(selector);
     if (input) input.addEventListener("input", renderFire);
   });
+
+  var linkToggle = document.querySelector("#linkInvestToggle");
+  if (linkToggle) {
+    linkToggle.addEventListener("change", function () {
+      if (!data.settings) data.settings = {};
+      data.settings.linkInvestEntry = linkToggle.checked;
+      saveData();
+    });
+  }
 });
 
 function fieldsToHtml(fields, values) {
@@ -1518,7 +1533,23 @@ function fieldsToHtml(fields, values) {
       return `<div class="field wide"><label>${safeLabel}</label><textarea name="${safeKey}" rows="3">${safeValue}</textarea></div>`;
     }
     const readonlyAttr = field.readonly ? ' readonly style="background:#f9fafb;color:#9ca3af"' : "";
-    return `<div class="field"><label>${safeLabel}</label><input name="${safeKey}" type="${esc(field.type || "text")}" step="0.01" value="${safeValue}"${readonlyAttr}></div>`;
+    const isNumber = field.type === "number";
+    const stepAttr = isNumber ? ' step="0.01"' : "";
+    const inputType = isNumber ? "number" : esc(field.type || "text");
+    let listAttr = "";
+    let datalistHtml = "";
+    if (Array.isArray(field.datalist) && field.datalist.length) {
+      const listId = "dl-" + safeKey;
+      listAttr = ` list="${listId}" autocomplete="off"`;
+      const seen = {};
+      const opts = field.datalist
+        .map((o) => String(o == null ? "" : o).trim())
+        .filter((o) => o && !seen[o] && (seen[o] = true))
+        .map((o) => `<option value="${esc(o)}"></option>`)
+        .join("");
+      datalistHtml = `<datalist id="${listId}">${opts}</datalist>`;
+    }
+    return `<div class="field"><label>${safeLabel}</label><input name="${safeKey}" type="${inputType}"${stepAttr} value="${safeValue}"${listAttr}${readonlyAttr}>${datalistHtml}</div>`;
   }).join("");
 }
 
@@ -1528,6 +1559,14 @@ function openEditor(config) {
   document.querySelector("#dialogFields").innerHTML = fieldsToHtml(config.fields, config.item);
   document.querySelector("#deleteBtn").style.visibility = config.isNew ? "hidden" : "visible";
   document.querySelector("#editorDialog").showModal();
+  // 新建记一笔时聚焦金额框，省一次点击
+  if (config.isNew && config.focusKey) {
+    const target = document.querySelector(`#dialogFields [name="${config.focusKey}"]`);
+    if (target) {
+      target.focus();
+      if (typeof target.select === "function") target.select();
+    }
+  }
 }
 
 function openAssetEditor(id) {
@@ -1589,18 +1628,26 @@ function openMonthEditor(id) {
 
 function openEntryEditor(id) {
   const isNew = !id;
-  const item = isNew ? { id: crypto.randomUUID(), date: today(), kind: "投资", amount: 0, target: "", channel: "", note: "" } : data.entries.find((x) => x.id === id);
+  const lastKind = localStorage.getItem(LAST_KIND_KEY) || "投资";
+  const item = isNew
+    ? { id: crypto.randomUUID(), date: today(), kind: lastKind, amount: 0, target: "", channel: "", note: "" }
+    : data.entries.find((x) => x.id === id);
+  // 去向候选：资产名（投资优先选这些）+ 历史用过的去向；渠道候选：历史用过的渠道
+  const assetNames = data.assets.map((a) => a.name).filter(Boolean);
+  const pastTargets = data.entries.map((e) => e.target).filter(Boolean);
+  const pastChannels = data.entries.map((e) => e.channel).filter(Boolean);
   openEditor({
     title: isNew ? "记一笔" : "编辑记录",
     isNew,
     item,
     collection: "entries",
+    focusKey: "amount",
     fields: [
       { key: "date", label: "日期", type: "date" },
       { key: "kind", label: "类型", type: "select", options: ["收入", "投资", "消费", "转账", "其他"] },
       { key: "amount", label: "金额", type: "number" },
-      { key: "target", label: "去向/产品" },
-      { key: "channel", label: "渠道" },
+      { key: "target", label: "去向/产品（投资选资产名可自动联动）", datalist: assetNames.concat(pastTargets) },
+      { key: "channel", label: "渠道", datalist: pastChannels },
       { key: "note", label: "备注", type: "textarea" },
     ],
   });
@@ -1748,6 +1795,85 @@ document.querySelector("#resetSyncCodeBtn")?.addEventListener("click", async () 
   document.querySelector("#syncHelp").textContent = "已生成新的同步码，并开始把本机数据写入新的云端记录。";
 });
 
+// ---- 投资记一笔 → 资产累计投入 / 月度实际投入 自动联动 ----
+// 设计：每条投资 entry 用 linkedAssetId/linkedMonth/linkedAmount 记住"上次联动加了多少、加到哪"。
+// 保存前先冲销旧联动(reverse)，保存后再应用新联动(apply)，确保编辑金额/改去向/删除都不会重复计数。
+
+function isLinkEnabled() {
+  return !(data.settings && data.settings.linkInvestEntry === false);
+}
+
+function monthKeyFromDate(dateStr) {
+  // entry.date 形如 2026-06-07 → 月度 key "2026/6"
+  var parts = String(dateStr || "").slice(0, 10).split("-");
+  if (parts.length < 2) return currentMonth();
+  var y = Number(parts[0]); var m = Number(parts[1]);
+  if (!y || !m) return currentMonth();
+  return y + "/" + m;
+}
+
+// 冲销一条投资 entry 之前造成的联动影响（按它记录的 linked* 字段回退）
+function reverseEntryLink(entry) {
+  if (!entry || !entry.linkedAmount) return;
+  var amt = numberValue(entry.linkedAmount);
+  if (amt === 0) return;
+  if (entry.linkedAssetId) {
+    var asset = data.assets.find(function (a) { return a.id === entry.linkedAssetId; });
+    if (asset) asset.cost = Math.max(numberValue(asset.cost) - amt, 0);
+  }
+  if (entry.linkedMonth) {
+    var month = data.monthly.find(function (m) { return m.month === entry.linkedMonth; });
+    if (month) month.invested = Math.max(numberValue(month.invested) - amt, 0);
+  }
+  entry.linkedAssetId = "";
+  entry.linkedMonth = "";
+  entry.linkedAmount = 0;
+}
+
+// 应用一条投资 entry 的联动：把金额加到匹配资产的累计投入 + 当月实际投入，并在 entry 上记账
+// 返回被联动的资产对象（用于市值快捷提示），无匹配资产返回 null
+function applyEntryLink(entry) {
+  entry.linkedAssetId = "";
+  entry.linkedMonth = "";
+  entry.linkedAmount = 0;
+  if (!isLinkEnabled()) return null;
+  if (String(entry.kind) !== "投资") return null;
+  var amt = numberValue(entry.amount);
+  if (amt <= 0) return null;
+  // 按去向名精确匹配资产；匹配不到则不联动资产（但仍联动月度投入）
+  var asset = data.assets.find(function (a) { return a.name && a.name === String(entry.target).trim(); });
+  var monthKey = monthKeyFromDate(entry.date);
+  var month = data.monthly.find(function (m) { return m.month === monthKey; });
+  if (!month) {
+    month = { id: crypto.randomUUID(), month: monthKey, income: 0, expense: 0, invested: 0, monthEndAssets: 0, specRatio: 0, note: "" };
+    data.monthly.push(month);
+  }
+  month.invested = numberValue(month.invested) + amt;
+  if (asset) asset.cost = numberValue(asset.cost) + amt;
+  entry.linkedAssetId = asset ? asset.id : "";
+  entry.linkedMonth = monthKey;
+  entry.linkedAmount = amt;
+  return asset;
+}
+
+// 联动后提示更新市值：预填"原市值+本次投入"作为买入当天的诚实估算，用户可改成券商实际值
+function promptUpdateMarketValue(asset, addedAmount) {
+  if (!asset) return false;
+  var suggested = Math.round(numberValue(asset.value) + numberValue(addedAmount));
+  var input = prompt(
+    "已把 " + money(addedAmount) + " 计入「" + asset.name + "」的累计投入和本月实际投入。\n\n" +
+    "顺便更新一下它的当前市值吗？\n" +
+    "（默认填的是「原市值+本次投入」的买入当天估算，你也可以改成券商 App 里的实际市值；取消则不改市值）",
+    suggested
+  );
+  if (input === null) return false;
+  var val = parseFloat(input);
+  if (isNaN(val) || val < 0) return false;
+  asset.value = Math.round(val);
+  asset.updated = today();
+  return true;
+}
+
 document.querySelector("#editorForm").addEventListener("submit", (event) => {
   if (event.submitter?.value !== "save") return;
   event.preventDefault();
@@ -1764,17 +1890,40 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
   });
   const collection = data[editing.collection];
   const index = collection.findIndex((item) => item.id === updated.id);
-  if (index >= 0) collection[index] = updated;
-  else collection.push(updated);
+
+  // 记一笔：保存前先冲销该记录的旧联动，写入后再应用新联动
+  let linkedAsset = null;
+  let linkedAmount = 0;
+  if (editing.collection === "entries") {
+    if (index >= 0) reverseEntryLink(collection[index]); // 冲销 collection 里的原始记录
+    if (index >= 0) collection[index] = updated;
+    else collection.push(updated);
+    linkedAsset = applyEntryLink(updated);
+    linkedAmount = numberValue(updated.linkedAmount);
+    localStorage.setItem(LAST_KIND_KEY, String(updated.kind || "投资")); // 记住类型作下次默认
+  } else {
+    if (index >= 0) collection[index] = updated;
+    else collection.push(updated);
+  }
   if (editing.collection === "assets") syncBufferDestinations(data.assets);
   saveData();
   document.querySelector("#editorDialog").close();
   render();
+  // 联动到具体资产时，提示顺手更新市值（放在 render 后，对话框已关）
+  if (linkedAsset && linkedAmount > 0) {
+    const changed = promptUpdateMarketValue(linkedAsset, linkedAmount);
+    if (changed) { saveData(); render(); }
+  }
 });
 
 document.querySelector("#deleteBtn").addEventListener("click", () => {
   if (!editing || editing.isNew) return;
   if (!confirm("确定要删除这条记录吗？此操作不可撤销。")) return;
+  // 删除投资记录前，先冲销它造成的累计投入/月度投入联动
+  if (editing.collection === "entries") {
+    const original = data.entries.find((item) => item.id === editing.item.id);
+    if (original) reverseEntryLink(original);
+  }
   data[editing.collection] = data[editing.collection].filter((item) => item.id !== editing.item.id);
   saveData();
   document.querySelector("#editorDialog").close();

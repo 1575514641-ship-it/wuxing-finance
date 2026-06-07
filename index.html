@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.12</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.13</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -161,6 +161,10 @@
           </div>
           <button id="addEntryBtn" class="primary-btn">记一笔</button>
         </div>
+        <label class="link-toggle">
+          <input id="linkInvestToggle" type="checkbox" checked>
+          <span>记「投资」时自动累加到对应资产的累计投入和本月实际投入（关掉则只记流水）</span>
+        </label>
         <div id="entryList" class="card-list"></div>
       </section>
 
@@ -392,11 +396,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-12"></script>
+  <script src="./sync.js?v=7-13"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-12"></script>
+  <script src="./app.js?v=7-13"></script>
 </body>
 </html>
