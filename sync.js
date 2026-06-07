@@ -79,8 +79,17 @@
 
   // ---- Worker API ----
 
+  // 始终走 Netlify 反代 /api/sync；workers.dev 直连在国内被墙，
+  // 旧设备 localStorage 可能残留直连 URL，这里自愈纠正回反代路径。
+  const PROXY_BASE = "/api/sync";
+
   function getWorkerUrl() {
-    return localStorage.getItem(WORKER_URL_KEY) || "";
+    const saved = localStorage.getItem(WORKER_URL_KEY) || "";
+    if (!saved || /workers\.dev/i.test(saved)) {
+      if (saved) localStorage.setItem(WORKER_URL_KEY, PROXY_BASE);
+      return PROXY_BASE;
+    }
+    return saved;
   }
 
   async function workerFetch(endpoint, body) {
