@@ -548,6 +548,7 @@ function renderSavingChart() {
       var i = monthIndex(m.month);
       return Number.isFinite(i) && i <= nowIdx && numberValue(m.income) > 0;
     })
+    .sort(function (a, b) { return monthIndex(a.month) - monthIndex(b.month); })
     .map(function (m) {
       var income = numberValue(m.income);
       var invested = numberValue(m.invested) || numberValue(m.plannedInvested);
@@ -555,7 +556,6 @@ function renderSavingChart() {
       var mo = String(m.month).replace(/^\d+\//, "") + "月";
       return { value: rate, label: mo };
     })
-    .sort(function (a, b) { return monthIndex(a.month) - monthIndex(b.month); })
     .slice(-12);
 
   // 只在首尾和每隔 3 个显示标签，防止拥挤
