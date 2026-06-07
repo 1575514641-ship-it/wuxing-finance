@@ -3,10 +3,10 @@
 ## 项目边界
 
 - 项目类型：纯静态 PWA，部署到 Netlify，无构建步骤。
-- 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已废弃）。
+- 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已删除）。
 - 线上地址：<https://www0706.netlify.app/>
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前版本：v7.11。
+- 当前版本：v7.12。
 
 ## 运行与验证
 
@@ -23,7 +23,7 @@
 每个版本发布前必须同步三处缓存/版本：
 
 - `index.html` 顶部 `<small>v7.x</small>`
-- `index.html` 里的 `supabase.js?v=7-x` 和 `app.js?v=7-x`
+- `index.html` 里的 `sync.js?v=7-x` 和 `app.js?v=7-x`
 - `sw.js` 第一行 `CACHE_NAME = "wuxing-finance-app-v7-x"`
 
 提交链路：

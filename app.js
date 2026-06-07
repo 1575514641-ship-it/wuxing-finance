@@ -69,6 +69,7 @@ let meta = loadMeta();
 let editing = null;
 let syncTimer = null;
 let syncInFlight = false;
+let syncPending = false;
 
 function fillMissingMonths() {
   if (!Array.isArray(data.monthly)) data.monthly = [];
@@ -240,9 +241,19 @@ function saveData(options = {}) {
 function scheduleCloudSave() {
   if (!window.supabase || !window.supabase.isConfigured()) return;
   clearTimeout(syncTimer);
+  syncPending = true;
   syncTimer = setTimeout(() => {
+    syncPending = false;
     syncToCloud();
   }, 450);
+}
+
+// 立即触发尚未发出的防抖同步（页面切走/关闭前调用，避免丢失最后一次保存）
+function flushPendingSync() {
+  if (!syncPending) return;
+  clearTimeout(syncTimer);
+  syncPending = false;
+  syncToCloud();
 }
 
 async function syncToCloud() {
@@ -1851,6 +1862,53 @@ async function initCloudSync(options = {}) {
     refreshSyncDialog();
   }
 }
+
+// 静默从云端拉取：仅当云端确实更新（updatedAt 更新）且本地无挂起改动时才覆盖，
+// 用于切回页面/网络恢复后把其它设备的改动同步过来，不打扰当前编辑。
+async function pullFromCloudIfNewer() {
+  if (!window.supabase || !window.supabase.isConfigured()) return;
+  if (syncInFlight || syncPending) return; // 本地有待发改动，优先保本地，等下次再拉
+  if (document.querySelector("dialog[open]")) return; // 用户正在编辑/看同步码，别换掉底层数据
+  try {
+    const record = await window.supabase.loadRecord();
+    if (!record || !record.data) return;
+    const cloudTime = timeValue(record.updatedAt);
+    const localTime = timeValue(meta.updatedAt);
+    if (cloudTime <= localTime) return; // 云端不比本地新，无需覆盖
+    data = normalizeData(record.data);
+    fillMissingMonths();
+    meta.updatedAt = record.updatedAt;
+    meta.lastSyncedAt = record.updatedAt;
+    meta.lastSyncError = "";
+    persistLocal();
+    render();
+    window.supabase.setStatus("online", `已拉取最新：${formatDateTime(meta.lastSyncedAt)}`);
+  } catch (error) {
+    // 静默失败：不打断用户，仅记录，等下次可见/网络事件再试
+    console.warn("后台拉取云端失败：", error);
+  }
+}
+
+// 页面重新可见：拉云端最新；切走/隐藏：flush 未发出的同步，避免关页面丢数据
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") {
+    pullFromCloudIfNewer();
+  } else {
+    flushPendingSync();
+  }
+});
+
+// pagehide（关闭/刷新/后退）也兜底 flush 一次
+window.addEventListener("pagehide", flushPendingSync);
+
+// 网络恢复：补发挂起的同步，并拉一次云端
+window.addEventListener("online", function () {
+  if (syncPending) {
+    flushPendingSync();
+  } else {
+    pullFromCloudIfNewer();
+  }
+});
 
 render();
 initCloudSync();
