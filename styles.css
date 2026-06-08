@@ -389,23 +389,57 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
 .field.wide { grid-column: 1 / -1; }
 .field-hint { color: var(--muted); font-size: 11px; line-height: 1.5; opacity: .85; }
 
-/* ---- 市值更新弹窗 ---- */
-.mv-dialog { width: min(420px, calc(100vw - 24px)); }
-.mv-body { padding: 16px; display: grid; gap: 8px; }
-.mv-intro { font-size: 13px; line-height: 1.6; color: var(--ink); margin: 0; }
-.mv-body label { color: var(--muted); font-size: 12px; font-weight: 500; }
-.mv-body input {
-  width: 100%;
+/* ---- 市值更新弹窗（批量） ---- */
+.mv-dialog { width: min(480px, calc(100vw - 24px)); }
+.mv-body { padding: 16px; display: grid; gap: 12px; }
+.mv-intro { font-size: 13px; line-height: 1.6; color: var(--muted); margin: 0; }
+.mv-list { display: grid; gap: 8px; max-height: 56vh; overflow-y: auto; }
+.mv-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border-radius: var(--radius-sm);
+}
+.mv-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mv-name b { font-size: 14px; color: var(--ink); }
+.mv-name small { font-size: 11px; color: var(--muted); }
+.mv-name .mv-up { color: var(--ok); }
+.mv-name .mv-down { color: var(--danger-ink); }
+.mv-cell {
+  width: 116px;
+  flex-shrink: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   min-height: 42px;
-  padding: 8px 12px;
-  font-size: 18px;
+  padding: 8px 10px;
+  font-size: 16px;
   color: var(--ink);
+  text-align: right;
 }
-.mv-hint { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 0; }
-/* footer 用 row-reverse：DOM 里 save 在前(回车默认确认)，视觉上仍是跳过在左、更新在右 */
 .mv-footer { flex-direction: row-reverse; }
+
+/* ---- 轻量提示条 ---- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(12px);
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  background: rgba(17, 24, 39, 0.94);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.5;
+  border-radius: 999px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 1000;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 

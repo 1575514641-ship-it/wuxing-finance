@@ -1677,6 +1677,13 @@ document.querySelectorAll(".tab").forEach((btn) => {
 document.querySelector("#addAssetBtn").addEventListener("click", () => openAssetEditor());
 document.querySelector("#addMonthBtn").addEventListener("click", () => openMonthEditor());
 document.querySelector("#addEntryBtn").addEventListener("click", () => openEntryEditor());
+document.querySelector("#updateMarketBtn")?.addEventListener("click", () => openMarketValueEditor());
+document.querySelector("#marketValueForm")?.addEventListener("submit", (event) => {
+  if (event.submitter && event.submitter.value === "save") {
+    saveMarketValues();
+  }
+  // <form method="dialog"> 会自动关闭弹窗；save/cancel 都关
+});
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   if (!confirm("套用22岁外派配置：按新方案更新资产的目标占比、层级和暂存状态。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n• QDII 类（标普500/全球医疗/纳指/矿股/自选）会被标记为 buffered → 货币基金，国内阶段自动暂存\n\n确定继续吗？")) return;
@@ -1859,40 +1866,68 @@ function applyEntryLink(entry) {
   return asset;
 }
 
-// 联动后提示更新市值：用 App 内弹窗，预填"原市值+本次投入"作为买入当天的诚实估算，
-// 用户可改成券商实际值。返回 Promise<boolean>（true=市值已更新）。
-function promptUpdateMarketValue(asset, addedAmount) {
-  return new Promise(function (resolve) {
-    var dlg = document.querySelector("#marketValueDialog");
-    var input = document.querySelector("#mvInput");
-    if (!dlg || !input || !asset) { resolve(false); return; }
-    var suggested = Math.round(numberValue(asset.value) + numberValue(addedAmount));
-    document.querySelector("#mvIntro").textContent =
-      "已把 " + money(addedAmount) + " 计入「" + asset.name + "」的累计投入和本月实际投入。顺便更新一下它的当前市值吗？";
-    document.querySelector("#mvLabel").textContent = asset.name + " 当前市值";
-    input.value = suggested;
-    // <form method="dialog"> 提交后 dialog.returnValue = 按钮的 value，并触发 close
-    var onClose = function () {
-      if (dlg.returnValue !== "save") { resolve(false); return; }
-      var val = parseFloat(input.value);
-      if (isNaN(val) || val < 0) { resolve(false); return; }
-      asset.value = Math.round(val);
-      asset.updated = today();
-      resolve(true);
-    };
-    dlg.addEventListener("close", onClose, { once: true });
-    var skipTop = document.querySelector("#mvSkipTop");
-    if (skipTop) {
-      skipTop.onclick = function () { dlg.close("cancel"); };
-    }
-    dlg.returnValue = "";
-    dlg.showModal();
-    input.focus();
-    input.select();
-  });
+// 轻量提示条：底部浮现 2.4 秒后淡出，不打断操作
+var toastTimer = null;
+function toast(message) {
+  var el = document.querySelector("#toast");
+  if (!el) return;
+  el.textContent = message;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { el.classList.remove("show"); }, 2400);
 }
 
-document.querySelector("#editorForm").addEventListener("submit", async (event) => {
+// 批量更新市值：列出所有资产，每行预填当前市值，对照券商一次性改完保存。
+// 这是市值的正确更新时机——跟着"每月看一次账户"的仪式走，而不是跟着每笔买入。
+function openMarketValueEditor() {
+  var dlg = document.querySelector("#marketValueDialog");
+  var listEl = document.querySelector("#mvList");
+  if (!dlg || !listEl) return;
+  if (!data.assets.length) {
+    alert("还没有资产，先在资产页新增或套用配置。");
+    return;
+  }
+  listEl.innerHTML = data.assets.map(function (a) {
+    var cost = numberValue(a.cost);
+    var val = numberValue(a.value);
+    var profit = val - cost;
+    var profitClass = profit > 0 ? "mv-up" : (profit < 0 ? "mv-down" : "");
+    return '<div class="mv-row">' +
+      '<div class="mv-name"><b>' + esc(a.name) + '</b>' +
+        '<small>累计投入 ' + money(cost) + (val ? ' · 现' + money(val) + ' <span class="' + profitClass + '">' + (profit >= 0 ? "+" : "") + money(profit) + '</span>' : '') + '</small>' +
+      '</div>' +
+      '<input class="mv-cell" type="number" inputmode="decimal" step="0.01" data-asset-id="' + esc(a.id) + '" value="' + (val || "") + '" placeholder="0">' +
+    '</div>';
+  }).join("");
+  dlg.returnValue = "";
+  dlg.showModal();
+}
+
+// 保存批量市值：把每行输入写回对应资产的 value，并更新日期
+function saveMarketValues() {
+  var inputs = document.querySelectorAll("#mvList .mv-cell");
+  var changed = 0;
+  inputs.forEach(function (input) {
+    var id = input.getAttribute("data-asset-id");
+    var asset = data.assets.find(function (a) { return a.id === id; });
+    if (!asset) return;
+    var raw = String(input.value).trim();
+    if (raw === "") return; // 空着不动这只
+    var val = parseFloat(raw);
+    if (isNaN(val) || val < 0) return;
+    var rounded = Math.round(val);
+    if (rounded !== numberValue(asset.value)) {
+      asset.value = rounded;
+      asset.updated = today();
+      changed += 1;
+    }
+  });
+  saveData();
+  render();
+  toast(changed > 0 ? "已更新 " + changed + " 只资产的市值" : "市值无变化");
+}
+
+document.querySelector("#editorForm").addEventListener("submit", (event) => {
   if (event.submitter?.value !== "save") return;
   event.preventDefault();
   const form = new FormData(event.currentTarget);
@@ -1932,10 +1967,9 @@ document.querySelector("#editorForm").addEventListener("submit", async (event) =
   saveData();
   document.querySelector("#editorDialog").close();
   render();
-  // 联动到具体资产时，提示顺手更新市值（放在 render 后，对话框已关）
+  // 联动到具体资产时给个轻提示，引导去批量更新市值（不再每笔弹框打断）
   if (linkedAsset && linkedAmount > 0) {
-    const changed = await promptUpdateMarketValue(linkedAsset, linkedAmount);
-    if (changed) { saveData(); render(); }
+    toast("已计入「" + linkedAsset.name + "」累计投入 · 月底点资产页「更新市值」对账");
   }
 });
 

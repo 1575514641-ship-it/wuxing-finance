@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.14</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.15</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -63,9 +63,12 @@
         <div class="section-head">
           <div>
             <h2>资产持仓</h2>
-            <p>每月月底更新「当前市值」和「累计投入」。</p>
+            <p>每月看一次账户时，点「更新市值」批量对账；累计投入由记一笔投资自动累加。</p>
           </div>
-          <button id="addAssetBtn" class="primary-btn">新增资产</button>
+          <div class="section-actions">
+            <button id="updateMarketBtn" class="ghost-btn">更新市值</button>
+            <button id="addAssetBtn" class="primary-btn">新增资产</button>
+          </div>
         </div>
         <div id="rebalanceTips" class="tips"></div>
         <div id="assetList" class="card-list"></div>
@@ -358,6 +361,8 @@
     </main>
   </div>
 
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
   <dialog id="editorDialog">
     <form method="dialog" id="editorForm">
       <header>
@@ -376,17 +381,15 @@
     <form method="dialog" id="marketValueForm">
       <header>
         <h3>更新市值</h3>
-        <button value="cancel" class="ghost-btn" type="button" id="mvSkipTop">跳过</button>
+        <button value="cancel" class="ghost-btn" type="submit">关闭</button>
       </header>
       <div class="mv-body">
-        <p id="mvIntro" class="mv-intro"></p>
-        <label for="mvInput" id="mvLabel">当前市值</label>
-        <input id="mvInput" type="number" step="0.01" inputmode="decimal">
-        <p class="mv-hint">默认是「原市值 + 本次投入」的买入当天估算，可改成券商 App 里的实际市值；跳过则不改市值。</p>
+        <p class="mv-intro">对照券商 / 基金 App 里的实际市值，把变动的几只改一下。留空的不改。这是市值的正确更新时机——配合你「每月看一次账户」。</p>
+        <div id="mvList" class="mv-list"></div>
       </div>
       <footer class="mv-footer">
-        <button value="save" type="submit" class="primary-btn">更新市值</button>
-        <button value="cancel" type="submit" class="ghost-btn">跳过</button>
+        <button value="save" type="submit" class="primary-btn" id="mvSaveBtn">保存全部</button>
+        <button value="cancel" type="submit" class="ghost-btn">关闭</button>
       </footer>
     </form>
   </dialog>
@@ -415,11 +418,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-14"></script>
+  <script src="./sync.js?v=7-15"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-14"></script>
+  <script src="./app.js?v=7-15"></script>
 </body>
 </html>
