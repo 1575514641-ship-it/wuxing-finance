@@ -92,6 +92,21 @@
     return saved;
   }
 
+  function friendlyWorkerError(status, text) {
+    const body = String(text || "");
+    const isLocalPreview = location.hostname === "127.0.0.1" || location.hostname === "localhost";
+    if (isLocalPreview && (status === 404 || status === 405 || status === 501 || /Unsupported method/i.test(body))) {
+      return "本地预览不支持云同步，请到公网 https://www0706.netlify.app/ 操作同步。";
+    }
+    if (status === 401 || status === 403) {
+      return "同步码校验失败，请确认两台设备使用同一个同步码。";
+    }
+    if (status >= 500) {
+      return "云同步暂时失败，数据仍保存在本机，请稍后重试。";
+    }
+    return "云同步失败，数据仍保存在本机：" + body.slice(0, 120);
+  }
+
   async function workerFetch(endpoint, body) {
     const base = getWorkerUrl().replace(/\/+$/, "");
     if (!base) throw new Error("Worker URL 未配置");
@@ -103,7 +118,7 @@
     });
     if (!res.ok) {
       const text = await res.text();
-      throw new Error("Worker " + res.status + ": " + text);
+      throw new Error(friendlyWorkerError(res.status, text));
     }
     return res.json();
   }

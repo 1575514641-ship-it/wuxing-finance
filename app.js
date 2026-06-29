@@ -396,6 +396,7 @@ function layerClass(element) {
 function render() {
   try {
     renderDashboard();
+    renderTodayActions();
     renderAssets();
     renderAllocate();
     renderFire();
@@ -407,7 +408,7 @@ function render() {
       '<div style="padding:40px;text-align:center;color:#b91c1c">' +
       '<h2>页面渲染出错</h2>' +
       '<p>' + esc(err.message) + '</p>' +
-      '<p style="color:#6b7280;margin-top:12px">尝试导出备份后清除浏览器数据，或导入上次的 JSON 备份。</p>' +
+      '<p style="color:#6b7280;margin-top:12px">不要反复刷新。先尝试导出当前 JSON 备份，再清理浏览器缓存或导入上次备份。</p>' +
       '<button onclick="location.reload()" style="margin-top:16px;padding:8px 20px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer">刷新页面</button>' +
       '</div>';
   }
@@ -501,6 +502,7 @@ function renderMonthly() {
 
   // ---- 应急金进度条 ----
   renderEmergencyBar();
+  renderMonthlyChecklist();
 
   // ---- 储蓄率趋势图 ----
   renderSavingChart();
@@ -544,6 +546,33 @@ function renderMonthly() {
   if (currentCard) {
     requestAnimationFrame(() => currentCard.scrollIntoView({ block: "nearest", behavior: "smooth" }));
   }
+}
+
+function renderMonthlyChecklist() {
+  var wrap = document.querySelector("#monthlyChecklist");
+  if (!wrap) return;
+  var month = currentMonthRecord();
+  var hasPlan = hasAllocationPlan(month);
+  var investedDone = numberValue(month && month.invested) > 0;
+  var monthEndDone = numberValue(month && month.monthEndAssets) > 0;
+  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
+  var emergencyDone = cashLayerValue() >= goal;
+  var items = [
+    { label: "本月计划是否保存", done: hasPlan, note: hasPlan ? "已保存" : "未保存" },
+    { label: "实际投入是否记录", done: investedDone, note: investedDone ? "已记录" : "买入后再记" },
+    { label: "月末总资产是否填写", done: monthEndDone, note: monthEndDone ? "已填写" : "月底填写" },
+    { label: "应急金目标是否需要调整", done: emergencyDone, note: emergencyDone ? "已达标" : "继续补现金层" },
+  ];
+  wrap.innerHTML =
+    '<div class="checklist-title">月度清单</div>' +
+    '<div class="monthly-check-grid">' +
+      items.map(function (item) {
+        return '<div class="monthly-check-item ' + (item.done ? "done" : "") + '">' +
+          '<span>' + esc(item.label) + '</span>' +
+          '<b>' + esc(item.note) + '</b>' +
+        '</div>';
+      }).join("") +
+    '</div>';
 }
 
 function renderEmergencyBar() {
@@ -1568,7 +1597,7 @@ function renderOpportunityChecker() {
   if (plan.ammo <= 0) {
     wrap.innerHTML =
       '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + '>' +
-        '<summary><span>机会补仓检查</span><small>本月没有可用弹药</small></summary>' +
+        '<summary><span>机会补仓检查：只在明显回撤时打开</span><small>本月没有可用弹药</small></summary>' +
         '<div class="opportunity-empty">现金层未超过应急金目标，先不动用弹药。请先在资产页更新现金层市值。</div>' +
       '</details>';
     return;
@@ -1609,7 +1638,7 @@ function renderOpportunityChecker() {
 
   wrap.innerHTML =
     '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + '>' +
-      '<summary><span>机会补仓检查</span><small>可选，仅在市场明显回撤时打开</small></summary>' +
+      '<summary><span>机会补仓检查：只在明显回撤时打开</span><small>可选，不是每月必看</small></summary>' +
       '<div class="opportunity-metrics">' +
         '<div><span>可用弹药</span><strong>' + money(plan.ammo) + '</strong><small>现金层 - 应急金目标</small></div>' +
         '<div><span>本次建议最多动用</span><strong>' + money(plan.maxBudget) + '</strong><small>30%弹药，封顶 ' + money(OPPORTUNITY_BUDGET_CAP) + '</small></div>' +
@@ -1710,12 +1739,7 @@ function saveAllocation() {
     '</span>' +
     '<button class="alloc-goto-monthly" type="button">去月度复盘 →</button>';
   document.querySelector(".alloc-goto-monthly").addEventListener("click", function () {
-    document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
-    document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
-    var tab = document.querySelector('[data-view="monthly"]');
-    if (tab) tab.classList.add("active");
-    var view = document.querySelector("#monthly");
-    if (view) view.classList.add("active");
+    switchView("monthly");
     render();
   });
 }
@@ -1929,13 +1953,117 @@ function currentMonth() {
   return `${d.getFullYear()}/${d.getMonth() + 1}`;
 }
 
+function currentMonthRecord() {
+  return data.monthly.find(function (m) { return m.month === currentMonth(); });
+}
+
+function hasAllocationPlan(month) {
+  return !!(month && Array.isArray(month.allocationPlan) && month.allocationPlan.length > 0);
+}
+
+function cashLayerValue() {
+  return data.assets
+    .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
+    .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+}
+
+function isUpdatedThisMonth(dateText) {
+  var d = String(dateText || "").slice(0, 10);
+  if (!d) return false;
+  var now = new Date();
+  var prefix = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+  return d.indexOf(prefix) === 0;
+}
+
+function switchView(viewName) {
+  var btn = document.querySelector('.tab[data-view="' + viewName + '"]');
+  var view = document.querySelector("#" + viewName);
+  if (!btn || !view) return;
+  document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+  document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
+  btn.classList.add("active");
+  view.classList.add("active");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function actionItem(label, detail, viewName, buttonText) {
+  return { label: label, detail: detail, viewName: viewName, buttonText: buttonText || "去处理" };
+}
+
+function buildTodayActions() {
+  var month = currentMonthRecord();
+  var t = totals();
+  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
+  var now = new Date();
+  var actions = [];
+
+  if (!hasAllocationPlan(month)) {
+    actions.push(actionItem("本月计划未保存", "工资到账后先生成本月分配计划。", "allocate", "去分配"));
+  } else if (numberValue(month && month.plannedInvested) > 0 && numberValue(month && month.invested) <= 0) {
+    actions.push(actionItem("计划已保存，买入后记得去随手记", "计划不等于执行，真实买入后再记录。", "ledger", "去随手记"));
+  }
+
+  if (now.getDate() >= 25 && (!month || numberValue(month.monthEndAssets) <= 0 || !data.assets.some(function (a) { return isUpdatedThisMonth(a.updated); }))) {
+    actions.push(actionItem("月底记得更新市值", "每月 25 号后对照账户批量更新资产市值。", "assets", "去资产"));
+  }
+
+  if (cashLayerValue() < goal) {
+    actions.push(actionItem("应急金未达标，本月优先补现金层", "出国前目标 " + money(goal) + "，先保命再投资。", "monthly", "看月度"));
+  }
+
+  if (t.specRatio >= 0.10) {
+    actions.push(actionItem("投机层已达10%，暂停新增", "纳指/科技/自选本月不再加钱。", "assets", "看资产"));
+  }
+
+  if (now <= new Date("2026-09-12T23:59:59")) {
+    actions.push(actionItem("冻结期内只执行，不改比例", "收官版只执行、回填真实信息和修 bug。", "rules", "看规则"));
+  }
+
+  if (!actions.length) {
+    actions.push(actionItem("今天没有必须处理的动作", "保持月度节奏，别为了操作而操作。", "rules", "看纪律"));
+  }
+
+  return actions.slice(0, 5);
+}
+
+function renderTodayActions() {
+  var wrap = document.querySelector("#todayActions");
+  if (!wrap) return;
+  var actions = buildTodayActions();
+  wrap.innerHTML = actions.map(function (item) {
+    return '<div class="today-action">' +
+      '<div><b>' + esc(item.label) + '</b><small>' + esc(item.detail) + '</small></div>' +
+      '<button type="button" class="ghost-btn action-jump" data-view="' + esc(item.viewName) + '">' + esc(item.buttonText) + '</button>' +
+    '</div>';
+  }).join("");
+  wrap.querySelectorAll(".action-jump").forEach(function (btn) {
+    btn.addEventListener("click", function () { switchView(btn.getAttribute("data-view")); });
+  });
+}
+
 document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".view").forEach((item) => item.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelector(`#${btn.dataset.view}`).classList.add("active");
+    switchView(btn.dataset.view);
   });
+});
+
+document.querySelector("#expandRulesBtn")?.addEventListener("click", function () {
+  document.querySelectorAll(".rule-section").forEach(function (section) { section.open = true; });
+});
+
+document.querySelector("#collapseRulesBtn")?.addEventListener("click", function () {
+  document.querySelectorAll(".rule-section").forEach(function (section) { section.open = false; });
+});
+
+document.querySelector("#copyOnboardingBtn")?.addEventListener("click", async function () {
+  var text = document.querySelector("#onboardingChecklist")?.innerText || "";
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("入职后回填清单已复制");
+  } catch {
+    toast("浏览器禁止自动复制，请手动选中清单复制");
+  }
 });
 
 document.querySelector("#addAssetBtn").addEventListener("click", () => openAssetEditor());
@@ -1950,7 +2078,7 @@ document.querySelector("#marketValueForm")?.addEventListener("submit", (event) =
 });
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
-  if (!confirm("套用22岁外派配置：按新方案更新资产的目标占比、层级和暂存状态。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n• QDII 类（标普500/全球医疗/纳指/矿股/自选）会被标记为 buffered → 货币基金，国内阶段自动暂存\n\n确定继续吗？")) return;
+  if (!confirm("套用22岁外派配置：按新方案更新资产的目标占比、层级和暂存状态。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n• QDII 类（标普500/全球医疗/纳指/矿股/自选）会被标记为 buffered → 货币基金，国内阶段自动暂存\n\n确定继续吗？")) return;
   var byName = {};
   data.assets.forEach(function (a) { byName[a.name] = a; });
   var nextAssets = [];
@@ -2060,7 +2188,7 @@ document.querySelector("#applySyncCodeBtn")?.addEventListener("click", async () 
 });
 
 document.querySelector("#resetSyncCodeBtn")?.addEventListener("click", async () => {
-  if (!confirm("确定要生成新的同步身份吗？旧设备不会自动跟随，新旧数据也不会自动合并。")) return;
+  if (!confirm("确定要生成新的同步身份吗？\n\n这会创建一套新的云端账本钥匙，旧设备不会自动跟随，新旧数据也不会自动合并。建议先导出当前 JSON 备份，再继续。")) return;
   window.supabase.resetIdentity();
   meta.lastSyncedAt = null;
   meta.lastSyncError = "";
@@ -2260,7 +2388,13 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
 
 document.querySelector("#deleteBtn").addEventListener("click", () => {
   if (!editing || editing.isNew) return;
-  if (!confirm("确定要删除这条记录吗？此操作不可撤销。")) return;
+  var deleteMsg = "确定要删除这条记录吗？此操作不可撤销。";
+  if (editing.collection === "assets") {
+    deleteMsg = "确定要删除这项资产吗？此操作不可撤销。\n\n真实清仓建议把目标占比改为 0 或在备注写清仓，不要删除历史资产记录。";
+  } else if (editing.collection === "entries") {
+    deleteMsg = "确定要删除这条随手记吗？如果它已联动实际投入，删除时会同步冲销；此操作不可撤销。";
+  }
+  if (!confirm(deleteMsg)) return;
   // 删除投资记录前，先冲销它造成的累计投入/月度投入联动
   if (editing.collection === "entries") {
     const original = data.entries.find((item) => item.id === editing.item.id);
@@ -2286,6 +2420,7 @@ document.querySelector("#importInput").addEventListener("change", async (event) 
   const file = event.target.files?.[0];
   if (!file) return;
   try {
+    if (!confirm("导入会覆盖当前本地账本。建议先导出当前数据作为 JSON 备份。确定导入吗？")) return;
     const text = await file.text();
     const parsed = JSON.parse(text);
     if (!parsed.assets || !parsed.monthly || !parsed.entries) throw new Error("格式不正确");

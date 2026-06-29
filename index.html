@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.19</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.22</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -50,6 +50,23 @@
         </article>
       </section>
 
+      <section class="action-dock" aria-label="今日动作">
+        <div class="action-dock-head">
+          <div>
+            <h2>今日动作</h2>
+            <p>打开先看这里，按现有数据生成，不保存打卡状态。</p>
+          </div>
+          <span class="freeze-pill">收官版</span>
+        </div>
+        <div id="todayActions" class="today-actions"></div>
+      </section>
+
+      <section class="discipline-card" aria-label="命盘纪律">
+        <b>命盘纪律</b>
+        <p>丙火日主，火势偏旺；当前癸酉阶段重规则、现金流、税务和资产制度。</p>
+        <small>执行原则：少操作，先存后花，投机层封顶，月度复盘，不用情绪改配置。</small>
+      </section>
+
       <nav class="tabs" aria-label="功能切换">
         <button class="tab active" data-view="assets">资产</button>
         <button class="tab" data-view="allocate">分配</button>
@@ -71,6 +88,7 @@
           </div>
         </div>
         <div id="rebalanceTips" class="tips"></div>
+        <div class="guard-note">当前处于规则冻结期：资产比例只看不改，月底更新市值即可。</div>
         <div id="assetList" class="card-list"></div>
       </section>
 
@@ -146,6 +164,8 @@
           <small class="emergency-bar-sub">出国前优先补到 3 万；海外稳定后可手动降到 2-2.5 万</small>
         </div>
 
+        <div id="monthlyChecklist" class="monthly-checklist"></div>
+
         <div class="fire-chart-wrap" style="margin-bottom:12px">
           <div class="fire-chart-legend">
             <span><i class="lg-history"></i>月储蓄率</span>
@@ -169,6 +189,7 @@
           <input id="linkInvestToggle" type="checkbox" checked>
           <span>记「投资」时自动累加到对应资产的累计投入和本月实际投入（关掉则只记流水）</span>
         </label>
+        <p class="ledger-note">这里记录真实发生，不记录计划。计划在分配页。</p>
         <div id="entryList" class="card-list"></div>
       </section>
 
@@ -184,17 +205,27 @@
           </div>
         </div>
 
-        <div class="rule-grid">
+        <div class="rule-toggle-actions">
+          <button id="expandRulesBtn" class="ghost-btn" type="button">展开全部</button>
+          <button id="collapseRulesBtn" class="ghost-btn" type="button">收起全部</button>
+        </div>
+
+        <details class="rule-section" open>
+          <summary>本月执行</summary>
+          <div class="rule-grid">
           <article><b>金｜主力</b><span>黄金、红利、纯债。用来固财。</span></article>
           <article><b>水｜流动</b><span>RMB货基、USD货币、海外宽基。用来降火、做汇率分散。</span></article>
           <article><b>土｜稳健</b><span>沪深300、中证500。中间层，生财。</span></article>
           <article><b>火｜限制</b><span>纳指、科技、个股。≤10%，亏光不补。</span></article>
           <article><b>木｜规避</b><span>杠杆、虚拟币、初创股权。容易放大风险。</span></article>
           <article><b>纪律｜核心</b><span>少操作就是多赚钱。先存后花。</span></article>
+          <article><b>收官边界</b><span>v7.22 后只修 bug、回填真实信息和更新说明；不再新增投资逻辑，不重开资产配置。</span></article>
         </div>
+        </details>
 
-        <h3 class="rule-section-title">执行纪律</h3>
-        <div class="rule-grid">
+        <details class="rule-section">
+          <summary>行为铁律</summary>
+          <div class="rule-grid">
           <article><b>外派｜杠杆</b><span>食宿包+高储蓄率是结构性优势。汇率高位多换RMB，低位多留USD。</span></article>
           <article><b>奖金｜现金流</b><span>项目奖金常压到结算后发，现金层留10%对冲。别为跳槽损失奖金。</span></article>
           <article><b>个人养老金｜暂缓</b><span>35岁 FIRE 资金不放入个人养老金；边际税率低于20%时不启用，未来税率升高且现金流稳定再评估。</span></article>
@@ -211,10 +242,12 @@
           <article><b>-20%什么都不做</b><span>宽基指数每3-5年跌一次20%+，每次1-3年恢复。你在积累期，跌=打折买入。</span></article>
           <article><b>不看股吧/财经号</b><span>噪音比信号多100倍。看了只会让你想"做点什么"，而做点什么=亏钱。</span></article>
           <article><b>不跟别人比</b><span>别人晒的永远是赚的那笔。你的目标是13年后的自由，不是这个月的收益率。</span></article>
-        </div>
+          </div>
+        </details>
 
-        <h3 class="rule-section-title">回撤补仓纪律</h3>
-        <div class="rule-grid">
+        <details class="rule-section">
+          <summary>回撤补仓</summary>
+          <div class="rule-grid">
           <article><b>弹药来源</b><span>只用现金层超出应急金目标的部分补仓。不动应急金，不借钱，不卖核心资产补投机层。</span></article>
           <article><b>回撤口径</b><span>回撤=近6-12个月高点后的跌幅，由你手动判断。App不接行情、不自动触发。</span></article>
           <article><b>标普500</b><span>跌8%转1份，跌15%再1份，跌25%再1份。国内阶段QDII受限时金额先暂存到货币基金。</span></article>
@@ -223,10 +256,12 @@
           <article><b>纳指/科技</b><span>跌15/25/35%各0.5份；投机层达到10%时无论跌多少都不买。</span></article>
           <article><b>黄金矿股</b><span>保留4%目标，但不列入机会补仓检查器。它是黄金的权益弹性，不是黄金ETF，不主动加速。</span></article>
           <article><b>禁止动作</b><span>不sell put，不买期权，不因为短视频改v7比例，不一次性打光弹药。</span></article>
-        </div>
+          </div>
+        </details>
 
-        <h3 class="rule-section-title">QDII 半解锁与溢价铁律</h3>
-        <div class="rule-grid">
+        <details class="rule-section">
+          <summary>QDII 半解锁</summary>
+          <div class="rule-grid">
           <article><b>半解锁范围</b><span>标普500国内最多先建到目标12%；全球医疗最多3%；纳指仍按投机层管理；USD货币工具继续暂存。</span></article>
           <article><b>建仓节奏</b><span>半解锁目标分6-12个月随工资爬坡；若触发回撤补仓可加速，但单月买入不超过该资产目标仓位的1/4。</span></article>
           <article><b>溢价 &lt; 1%</b><span>正常按月买。</span></article>
@@ -235,20 +270,36 @@
           <article><b>溢价 &gt; 3%</b><span>暂停买入；连续2周&gt;3%或场外恢复严格限购时，自动回到 buffered 节奏。</span></article>
           <article><b>溢价 &gt; 5%</b><span>绝对不买。这是送钱，不是投资。宁可暂存也不追溢价。</span></article>
           <article><b>窗口重开</b><span>继续按月爬坡，不补买之前错过的月份，禁止报复性买入。</span></article>
-        </div>
+          </div>
+        </details>
 
-        <h3 class="rule-section-title">出海执行规则 v1（冻结至 2026-09-12）</h3>
-        <div class="rule-grid">
+        <details class="rule-section">
+          <summary>出海规则</summary>
+          <div class="rule-grid">
           <article><b>配置基线不改</b><span>现金13% / 防御22% / 生财24% / 成长36% / 投机10%。短视频只吸收纪律，不照搬比例。</span></article>
           <article><b>自选个股冻结</b><span>保留5%目标占位，但状态为手动暂停；入职第一年不主动买，等稳定后再评估是否启用。</span></article>
           <article><b>应急金阶段化</b><span>出国前目标3万；海外稳定后可手动降到2-2.5万。这个设置已在月度页目标按钮里可改。</span></article>
           <article><b>税务备忘</b><span>外派后仍可能是中国税务居民，境外所得年度汇算要问公司安排；IB买美股记得提交W-8BEN。</span></article>
           <article><b>汇率复盘</b><span>每年1月按当年USDCNY重算FIRE缺口；偏差&gt;10%时调整月存目标，不调整配置比例。</span></article>
           <article><b>冻结边界</b><span>冻结期只允许执行、入职后回填真实信息和修bug；不再重开配置比例和规则框架。</span></article>
-        </div>
+          <article><b>应急金先行</b><span>出国前优先存到3万（余额宝），独立于投资配置。覆盖入职安顿、证件体检、装备和一次临时回国。</span></article>
+          <article><b>开券商账户</b><span>东方财富或华泰证券，线上10分钟。佣金谈万1免五。场内ETF不受QDII限购。</span></article>
+          <article><b>工资结构</b><span>入职后确认境内/境外发薪比例、币种、奖金结算节奏、社保公积金基数和公司税务安排。</span></article>
+          <article><b>出发前90天</b><span>确认券商APP海外可用；保留中国手机号；银行卡别到期；准备百万医疗和高保额意外险。</span></article>
+          <article><b>记录所有账户</b><span>券商、银行、基金账号、密码、验证方式，存到安全位置。出国后补办极麻烦。</span></article>
+          <article><b>IB材料准备</b><span>先准备护照、派驻通知、收入证明、地址证明；开户不强行抢跑，等派驻地和工资路径确认后执行。</span></article>
+          <article><b>双轨制</b><span>国内存量RMB继续持有A股+黄金+纯债（不操作）。海外工资直接在海外投资，不换回RMB。</span></article>
+          <article><b>开IB账户</b><span>拿到派驻地、海外银行和收入证明后再开Interactive Brokers。新增海外资金优先走海外路径，不占国内购汇额度。</span></article>
+          <article><b>迁移QDII</b><span>到达6-12个月后逐步赎回国内QDII（选净值高点），资金转入IB买VOO/QQQ。年省0.4-0.8%费率。</span></article>
+          <article><b>最终形态</b><span>国内只留A股ETF+黄金+纯债（0.20%费率）。海外资产全在IB：VOO 0.03%、QQQ 0.20%、IXJ 0.40%。</span></article>
+          <article><b>汇率管理</b><span>每月固定比例换汇，不赌汇率。保留20-30%资产在RMB（回国/家人/A股）。</span></article>
+          <article><b>应急金分两地</b><span>50% RMB（余额宝，覆盖回国）+ 50% 当地货币（本地银行，覆盖海外突发）。</span></article>
+          </div>
+        </details>
 
-        <h3 class="rule-section-title">推荐产品（低费率优先）</h3>
-        <div class="product-table-wrap">
+        <details class="rule-section">
+          <summary>推荐产品</summary>
+          <div class="product-table-wrap">
           <table class="product-table">
             <thead><tr><th>层级</th><th>产品</th><th>代码</th><th>年费率</th><th>渠道</th></tr></thead>
             <tbody>
@@ -265,35 +316,65 @@
             </tbody>
           </table>
           <small class="rule-note">场内ETF需开券商账户（推荐东方财富/华泰，佣金万1免五）。QDII场内注意溢价率。</small>
-        </div>
+          </div>
+        </details>
 
-        <h3 class="rule-section-title">出国前清单</h3>
-        <div class="rule-grid">
-          <article><b>应急金先行</b><span>出国前优先存到3万（余额宝），独立于投资配置。覆盖入职安顿、证件体检、装备和一次临时回国。</span></article>
-          <article><b>开券商账户</b><span>东方财富或华泰证券，线上10分钟。佣金谈万1免五。场内ETF不受QDII限购。</span></article>
-          <article><b>工资结构</b><span>入职后确认境内/境外发薪比例、币种、奖金结算节奏、社保公积金基数和公司税务安排。</span></article>
-          <article><b>出发前90天</b><span>确认券商APP海外可用；保留中国手机号；银行卡别到期；准备百万医疗和高保额意外险。</span></article>
-          <article><b>记录所有账户</b><span>券商、银行、基金账号、密码、验证方式，存到安全位置。出国后补办极麻烦。</span></article>
-          <article><b>IB材料准备</b><span>先准备护照、派驻通知、收入证明、地址证明；开户不强行抢跑，等派驻地和工资路径确认后执行。</span></article>
-        </div>
-
-        <h3 class="rule-section-title">出国后路线</h3>
-        <div class="rule-grid">
-          <article><b>双轨制</b><span>国内存量RMB继续持有A股+黄金+纯债（不操作）。海外工资直接在海外投资，不换回RMB。</span></article>
-          <article><b>开IB账户</b><span>拿到派驻地、海外银行和收入证明后再开Interactive Brokers。新增海外资金优先走海外路径，不占国内购汇额度。</span></article>
-          <article><b>迁移QDII</b><span>到达6-12个月后逐步赎回国内QDII（选净值高点），资金转入IB买VOO/QQQ。年省0.4-0.8%费率。</span></article>
-          <article><b>最终形态</b><span>国内只留A股ETF+黄金+纯债（0.20%费率）。海外资产全在IB：VOO 0.03%、QQQ 0.20%、IXJ 0.40%。</span></article>
-          <article><b>汇率管理</b><span>每月固定比例换汇，不赌汇率。保留20-30%资产在RMB（回国/家人/A股）。</span></article>
-          <article><b>应急金分两地</b><span>50% RMB（余额宝，覆盖回国）+ 50% 当地货币（本地银行，覆盖海外突发）。</span></article>
-        </div>
-
-        <h3 class="rule-section-title">费率与税收速查</h3>
-        <div class="rule-grid">
+        <details class="rule-section">
+          <summary>税费速查</summary>
+          <div class="rule-grid">
           <article><b>QDII税收</b><span>美国股息预扣由基金处理。个人境外所得和税务居民身份按公司税务安排确认，不要默认免申报。</span></article>
           <article><b>A股ETF</b><span>管理费+托管费0.20%/年。卖出印花税0.05%。无资本利得税。</span></article>
           <article><b>海外券商(IB)</b><span>VOO费率0.03%。美国股息税10%(W-8BEN)。美国资本利得税0%(非居民)。中国CGT理论20%实际未征。</span></article>
           <article><b>费率差距</b><span>QDII标普(0.85%) vs 直接VOO(0.03%)：每100万持有20年，QDII少赚约20万。出海后迁移是确定性红利。</span></article>
-        </div>
+          </div>
+        </details>
+
+        <details class="rule-section">
+          <summary>入职后回填</summary>
+          <div class="handoff-card">
+            <p>这不是待办打卡，而是入职后更新参数的核对表。拿到真实信息后，只回填数字和备注，不重开配置框架。</p>
+            <button id="copyOnboardingBtn" class="ghost-btn" type="button">复制清单</button>
+            <pre id="onboardingChecklist">入职后回填清单
+
+薪资与现金流
+- 国内税后月收入
+- 国内阶段预计持续月数
+- 海外税后月收入
+- 境内/境外发薪比例
+- 发薪币种
+- 奖金发放规则与延迟周期
+
+社保与税务
+- 社保缴费基数
+- 公积金缴费基数
+- 外派期间社保是否连续
+- 公司境外所得税务安排
+- 是否需要自行年度汇算
+- 派驻国是否已代扣税
+
+保险与医疗
+- 公司商业保险范围
+- 是否覆盖派驻国
+- 是否覆盖战乱/恐袭/高风险地区
+- 国内百万医疗是否已配置
+- 意外险是否覆盖境外工作
+
+资金路径
+- 海外工资发到哪个银行
+- 是否可直接入金 IB
+- 是否占用个人 5 万美元购汇额度
+- 当地外汇管制强度
+- 回国汇款路径和手续费
+
+执行参数
+- FIRE 国内阶段月存
+- FIRE 海外阶段月存
+- 首年安家支出
+- 应急金目标
+- QDII 半解锁是否继续
+- IB 是否具备开户条件</pre>
+          </div>
+        </details>
       </section>
 
       <section id="fire" class="view">
@@ -303,6 +384,7 @@
             <p>FIRE 不是退休，是有选择权。今天购买力和目标年龄名义金额分开看。</p>
           </div>
         </div>
+        <div class="guard-note">当前为方向测算。真实税后工资、房租、汇率、保险和派驻地确认后，再把这里作为正式路线图。</div>
 
         <div class="alloc-inputs fire-inputs">
           <div class="alloc-field">
@@ -444,7 +526,8 @@
         <button value="cancel" class="ghost-btn" type="submit">关闭</button>
       </header>
       <div class="sync-panel">
-        <p class="sync-note">同步码相当于这份账本的钥匙。电脑和手机使用同一个同步码，才会连接到同一份云端数据；不要发给别人。</p>
+        <p class="sync-note">同步码等于账本钥匙，不要截图发给别人。换设备时只发给自己的设备。</p>
+        <p class="sync-note">同步不是备份；每月月底仍建议导出一次 JSON 备份。</p>
 
         <label for="syncCodeText">本机同步码</label>
         <textarea id="syncCodeText" rows="4" readonly></textarea>
@@ -461,11 +544,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-19"></script>
+  <script src="./sync.js?v=7-22"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-19"></script>
+  <script src="./app.js?v=7-22"></script>
 </body>
 </html>

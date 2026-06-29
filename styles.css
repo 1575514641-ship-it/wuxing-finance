@@ -177,6 +177,103 @@ h1, h2, h3, p { margin: 0; }
   50% { background: #fee2e2; box-shadow: 0 0 0 3px rgba(220,38,38,.12); }
 }
 
+/* ---- 今日动作 / 收官纪律 ---- */
+.action-dock,
+.discipline-card,
+.guard-note,
+.monthly-checklist,
+.ledger-note,
+.handoff-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.action-dock {
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.action-dock-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.action-dock h2 { font-size: 16px; font-weight: 700; }
+.action-dock p { color: var(--muted); font-size: 12px; margin-top: 2px; }
+
+.freeze-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 3px 9px;
+  background: var(--success-bg);
+  color: var(--success-ink);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.today-actions { display: grid; gap: 8px; }
+
+.today-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+}
+
+.today-action b {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.today-action small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.discipline-card {
+  padding: 13px 16px;
+  margin-bottom: 14px;
+  display: grid;
+  gap: 5px;
+  border-left: 3px solid var(--fire);
+}
+
+.discipline-card b { font-size: 14px; }
+.discipline-card p { font-size: 13px; color: var(--ink2); line-height: 1.6; }
+.discipline-card small { color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+.guard-note,
+.ledger-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  background: #fafafa;
+}
+
+.guard-note {
+  border-color: rgba(29,78,216,.16);
+  background: var(--accent-bg);
+  color: var(--ink2);
+}
+
 /* ---- Tabs ---- */
 .tabs {
   display: grid;
@@ -342,6 +439,71 @@ h1, h2, h3, p { margin: 0; }
 .product-table th { background: var(--line2); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .3px; }
 .product-table tr:last-child td { border-bottom: 0; }
 .rule-note { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+.rule-toggle-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.rule-section {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.rule-section summary {
+  min-height: 46px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink);
+  background: #fafafa;
+  user-select: none;
+}
+
+.rule-section[open] summary {
+  border-bottom: 1px solid var(--line);
+  background: var(--line2);
+}
+
+.rule-section > .rule-grid,
+.rule-section > .product-table-wrap,
+.rule-section > .handoff-card {
+  margin: 12px;
+}
+
+.handoff-card {
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  box-shadow: none;
+  background: #fafafa;
+}
+
+.handoff-card p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.handoff-card pre {
+  margin: 0;
+  padding: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink2);
+  font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
 
 /* ---- Dialog ---- */
 dialog {
@@ -813,6 +975,45 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
 .emergency-bar-fill.reached { background: var(--ok); }
 .emergency-bar-sub { color: var(--muted); font-size: 12px; }
 
+.monthly-checklist {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+.monthly-check-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.monthly-check-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+}
+
+.monthly-check-item span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.monthly-check-item b {
+  font-size: 14px;
+  color: var(--warn-ink);
+}
+
+.monthly-check-item.done {
+  background: var(--success-bg);
+  border-color: #a7f3d0;
+}
+
+.monthly-check-item.done b { color: var(--success-ink); }
+
 /* ---- 空状态 ---- */
 .empty-state {
   text-align: center;
@@ -889,6 +1090,14 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
   .metric { padding: 12px; }
   .metric strong { font-size: 20px; }
 
+  .action-dock,
+  .discipline-card,
+  .monthly-checklist,
+  .handoff-card { padding: 12px; }
+
+  .today-action { grid-template-columns: 1fr; align-items: stretch; }
+  .today-action .ghost-btn { width: 100%; }
+
   /* tabs 两行 */
   .tabs { grid-template-columns: repeat(3, 1fr); }
   .tab { font-size: 12px; min-height: 34px; }
@@ -900,6 +1109,7 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
   .card-title { grid-column: 1 / -1; }
   .num { text-align: left; }
   .monthly-card { grid-template-columns: 1fr 1fr; }
+  .monthly-check-grid { grid-template-columns: 1fr 1fr; }
 
   .alloc-inputs { grid-template-columns: 1fr; }
   .fire-inputs  { grid-template-columns: 1fr; }
@@ -912,6 +1122,11 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
   .opportunity-result-row { grid-template-columns: 1fr; gap: 4px; }
   .opportunity-result-row em { text-align: left; }
   .rule-grid    { grid-template-columns: 1fr; }
+  .rule-toggle-actions { justify-content: stretch; }
+  .rule-toggle-actions .ghost-btn { flex: 1; }
+  .rule-section > .rule-grid,
+  .rule-section > .product-table-wrap,
+  .rule-section > .handoff-card { margin: 10px; }
   .form-grid    { grid-template-columns: 1fr; }
   .sync-actions .primary-btn, .sync-actions .danger-btn { flex: 1; }
 }
