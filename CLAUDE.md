@@ -6,7 +6,7 @@
 - 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已删除）。
 - 线上地址：<https://www0706.netlify.app/>
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前版本：v7.15。
+- 当前版本：v7.19。
 
 ## 运行与验证
 
@@ -53,6 +53,11 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - 不加“忽略一次”按钮。要绕过只能手动改资产 target，这个摩擦是冷静期。
 - QDII/出海后执行资产用 `status: "buffered"` 或 `buffered:*` 暂存到 `bufferDestinationId` 指向的资产。
 - 出海后可在规则页点「我已出海·解锁暂存」，一键把 buffered 资产改回 available。
+- v7.19 已固化《半解锁与出海执行规则 v1》，冻结至 2026-09-12：只允许执行方案、入职后回填真实工资/税务/资金路径信息和修 bug，不再重开配置比例或规则框架。
+- 自选个股/行业 ETF 保留 5% target，但默认 `status: "paused:manual"`；这是冻结，不是清零。入职第一年不主动买。
+- QDII 国内阶段采用半解锁纪律：标普500最多先建到目标 12%，全球医疗最多 3%，纳指仍按投机层管理，USD货币工具继续 buffered；溢价 >3% 回 buffered，>5% 绝不买，窗口重开不补买错过月份。
+- 应急金默认目标为 30000。出国前 3 万，海外稳定后可在月度页手动降到 2-2.5 万。
+- 个人养老金暂缓：35 岁 FIRE 资金不放入个人养老金；边际税率低于 20% 时不启用，未来税率升高且现金流稳定再评估。
 
 ## 分配引擎不变量
 
@@ -73,24 +78,26 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - `isAvailableAsset(asset)`：分配目的地可用性判断。
 - `syncBufferDestinations(assets)`：兼容旧 name 暂存去向并同步到 `bufferDestinationId`。
 - `computeEffectiveTargets(assets)`：计算含暂存汇入后的有效目标；资产页和分配页都依赖它。
+- `calcOpportunityPlan(selectedTriggers)`：机会补仓检查器纯函数；弹药=现金层 available 市值 - 应急金目标，单次预算=min(弹药30%, 5000)，只显示建议，不写任何数据。矿股不在 `DRAWDOWN_RULES`，不做机会补仓对象。
 - `calcAllocation(inputs)`：核心分配引擎。
-- `calcFire(inputs)`：FIRE 测算纯函数，不读写 data；含达成日预测、灵敏度、目标线计算。
-- `projectMonthsToTarget(...)`：月度复利滚动求达成月数；目标随通胀上移，80 年内不可达返回 `reachable:false`。
+- `calcFire(inputs)`：FIRE 测算纯函数，不读写 data；含达成日预测、灵敏度、目标线计算，并支持国内/海外两段月存与首年安家支出。
+- `projectMonthsToTarget(...)` / `projectMonthsToTargetPhased(...)`：月度复利滚动求达成月数；目标随通胀上移，80 年内不可达返回 `reachable:false`。
 - `fireHistorySeries()` / `drawFireChart(...)`：从月度 `monthEndAssets` 取历史净值，纯 SVG 画历史实线 + 预测虚线 + 目标线。
 
 ## 当前主要功能
 
 - 资产页：显示当前占比/归一化目标；偏低项直接显示建议补仓金额；暂存接收方显示「含暂存后」有效目标；无资产时显示空状态引导。
-- 分配页：输入收入、支出、预留、储蓄率，生成本月建议；显示工资到账操作清单；保存后显示确认块+手动跳转按钮（不再自动跳转）。
+- 分配页：输入收入、支出、预留、储蓄率，生成本月建议；显示工资到账操作清单；含“机会补仓检查器”（手动勾选回撤条件，只显示建议金额，不保存/不执行）；保存后显示确认块+手动跳转按钮（不再自动跳转）。
 - 月度页：顶部应急金进度条（目标可编辑）+ 储蓄率趋势折线；计划投资和实际投入分开显示；月度编辑器含储蓄率只读展示。
 - 随手记：按年月分组折叠，每组显示收入/投资小计。
-- 规则页：套用 v7 配置、出海解锁暂存、执行手册（行为铁律、QDII 溢价规则、推荐产品表、出国前清单、出国后路线、费率税收速查）。
-- FIRE 页：三档线 + 进度条；FIRE 仪表盘（预计达成日、灵敏度、净值历史+预测曲线）。
+- 规则页：套用 v7 配置、出海解锁暂存、执行手册（行为铁律、回撤补仓纪律、QDII 半解锁与溢价铁律、出海执行规则 v1、推荐产品表、出国前清单、出国后路线、费率税收速查）。
+- FIRE 页：三档线 + 进度条；FIRE 仪表盘（预计达成日、灵敏度、净值历史+预测曲线），按国内阶段月存/海外阶段月存/首年安家支出做两段式预测。
 
 ## 不要做
 
 - 不引入构建工具、测试框架或前端框架。
 - 不改云同步后端 schema（CF D1 `user_data` 表 / Worker 接口），除非用户明确要求。
 - 不做短视频比例照搬，不改 v7 配置为 40/40/20。
+- 不接行情 API，不自动判断回撤，不把机会补仓写入 `entries/invested/plannedInvested/value`。
 - 不加虚拟币、杠杆、初创股权、买房建议相关逻辑。
 - 不让 `phase/channel` 之类展示字段隐式影响 `calcAllocation`。

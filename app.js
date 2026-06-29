@@ -8,6 +8,13 @@ const LAST_KIND_KEY = "wuxing-last-entry-kind";
 // 黄金从10%降到7%（估值过高），矿股从7%降到4%（去杠杆），标普从22%升到25%，纯债从5%升到8%，沪深300升到17%
 const BUFFER_DEFAULT_ID = "cash-rmb";
 const BUFFER_DEFAULT = "货币基金";
+const OPPORTUNITY_BUDGET_CAP = 5000;
+const DRAWDOWN_RULES = [
+  { assetId: "sp500", triggers: [{ pct: 8, units: 1 }, { pct: 15, units: 1 }, { pct: 25, units: 1 }] },
+  { assetId: "a500-csi300", triggers: [{ pct: 10, units: 1 }, { pct: 20, units: 1 }, { pct: 30, units: 1 }] },
+  { assetId: "csi500", triggers: [{ pct: 15, units: 1 }, { pct: 25, units: 1 }, { pct: 35, units: 1 }] },
+  { assetId: "nasdaq-tech", triggers: [{ pct: 15, units: 0.5 }, { pct: 25, units: 0.5 }, { pct: 35, units: 0.5 }] },
+];
 const HALF_FIRE_PLAN = [
   { id: BUFFER_DEFAULT_ID, layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.08, status: "available" },
   { id: "cash-usd", layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
@@ -20,7 +27,7 @@ const HALF_FIRE_PLAN = [
   { id: "global-healthcare", layer: "成长层", element: "金水", name: "全球医疗/制药", type: "海外主题", target: 0.07, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
   { id: "gold-miners", layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.04, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
   { id: "nasdaq-tech", layer: "投机层", element: "火", name: "纳斯达克100/科技主题", type: "科技成长", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "speculative-stock", layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
+  { id: "speculative-stock", layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "paused:manual" },
 ];
 
 const defaultData = {
@@ -37,12 +44,14 @@ const defaultData = {
     value: 0,
     cost: 0,
     updated: "",
-    note: row.layer === "投机层" && row.name.startsWith("纳斯达克") ? "投机层合计不超过10%；单只+50%卖一半，-30%不补不卖" : "",
+    note: row.id === "speculative-stock"
+      ? "默认冻结；入职第一年不主动买，自选/行业ETF只保留目标占位"
+      : (row.layer === "投机层" && row.name.startsWith("纳斯达克") ? "投机层合计不超过10%；单只+50%卖一半，-30%不补不卖" : ""),
   })),
   monthly: makeDefaultMonths(),
   entries: [],
   settings: {
-    emergencyGoal: 20000,
+    emergencyGoal: 30000,
     linkInvestEntry: true,
   },
 };
@@ -126,18 +135,25 @@ function normalizeData(input) {
     if (a && typeof a === "object") {
       if (!a.id) a.id = crypto.randomUUID();
       if (typeof a.status === "undefined") a.status = "available";
+      if (a.id === "speculative-stock" && isBufferedStatus(a.status)) {
+        a.status = "paused:manual";
+        a.bufferDestinationId = "";
+        a.bufferDestination = "";
+        if (!a.note) a.note = "默认冻结；入职第一年不主动买，自选/行业ETF只保留目标占位";
+      }
       if (typeof a.bufferDestinationId === "undefined") a.bufferDestinationId = "";
       if (typeof a.bufferDestination === "undefined") a.bufferDestination = "";
     }
   });
   syncBufferDestinations(assets);
   const srcSettings = source.settings && typeof source.settings === "object" ? source.settings : {};
+  const oldEmergencyGoal = numberValue(srcSettings.emergencyGoal);
   return {
     assets,
     monthly: Array.isArray(source.monthly) ? source.monthly : fallback.monthly,
     entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
     settings: {
-      emergencyGoal: numberValue(srcSettings.emergencyGoal) || fallback.settings.emergencyGoal,
+      emergencyGoal: oldEmergencyGoal && oldEmergencyGoal !== 20000 ? oldEmergencyGoal : fallback.settings.emergencyGoal,
       linkInvestEntry: typeof srcSettings.linkInvestEntry === "boolean" ? srcSettings.linkInvestEntry : true,
     },
   };
@@ -237,7 +253,13 @@ function saveData(options = {}) {
   }
   persistLocal();
   if (window.supabase && window.supabase.isConfigured()) {
-    scheduleCloudSave();
+    if (options.sync === true) {
+      clearTimeout(syncTimer);
+      syncPending = false;
+      syncToCloud();
+    } else {
+      scheduleCloudSave();
+    }
   }
 }
 
@@ -260,7 +282,11 @@ function flushPendingSync() {
 }
 
 async function syncToCloud() {
-  if (!window.supabase || !window.supabase.isConfigured() || syncInFlight) return;
+  if (!window.supabase || !window.supabase.isConfigured()) return;
+  if (syncInFlight) {
+    syncPending = true;
+    return;
+  }
   syncInFlight = true;
   window.supabase.setStatus("syncing");
   try {
@@ -269,7 +295,7 @@ async function syncToCloud() {
     meta.lastSyncError = "";
     persistMeta();
     if (record.legacy) {
-      window.supabase.setStatus("legacy", "正在使用旧同步策略；执行新版 schema.sql 后会自动切换为安全同步。");
+      window.supabase.setStatus("legacy", "检测到旧版同步记录；建议导出备份后重新生成同步码迁移到当前云同步。");
     } else {
       window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
     }
@@ -280,6 +306,11 @@ async function syncToCloud() {
     window.supabase.setStatus("error", meta.lastSyncError);
   } finally {
     syncInFlight = false;
+    if (syncPending) {
+      clearTimeout(syncTimer);
+      syncPending = false;
+      syncToCloud();
+    }
   }
 }
 
@@ -518,7 +549,7 @@ function renderMonthly() {
 function renderEmergencyBar() {
   var el = document.querySelector("#emergencyBar");
   if (!el) return;
-  var goal = numberValue(data.settings && data.settings.emergencyGoal) || 20000;
+  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
   // 应急金 = 现金层资产市值之和（货币基金）
   var cashValue = data.assets
     .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
@@ -534,8 +565,8 @@ function renderEmergencyBar() {
     ? "应急金已达标 ✓"
     : "应急金 " + money(cashValue) + " / " + money(goal);
   if (subEl) subEl.textContent = reached
-    ? "可以开始按完整配置投资"
-    : "未达标前优先补应急金，投资按 50% 力度执行";
+    ? "出国前 3 万已达标；海外稳定后可手动降到 2-2.5 万"
+    : "出国前优先补到 3 万，应对入职安顿、证件体检和临时回国";
   // 目标可点击编辑
   var editEl = el.querySelector(".emergency-edit");
   if (editEl) {
@@ -565,7 +596,7 @@ function renderSavingChart() {
     .sort(function (a, b) { return monthIndex(a.month) - monthIndex(b.month); })
     .map(function (m) {
       var income = numberValue(m.income);
-      var invested = numberValue(m.invested) || numberValue(m.plannedInvested);
+      var invested = numberValue(m.invested);
       var rate = income > 0 ? invested / income : 0;
       var mo = String(m.month).replace(/^\d+\//, "") + "月";
       return { value: rate, label: mo };
@@ -674,6 +705,10 @@ function calcFire(inputs) {
   var inflationRate = clamp(numberValue(inputs.inflationRatePct) / 100, 0, 1);
   var primaryRate = clamp(numberValue(inputs.realReturnPct) / 100, 0.01, 1);
   var years = Math.max(targetAge - currentAge, 0);
+  var domesticMonthly = max0(numberValue(inputs.domesticMonthly));
+  var domesticMonths = Math.round(max0(numberValue(inputs.domesticMonths)));
+  var overseasMonthly = max0(numberValue(inputs.overseasMonthly));
+  var firstYearSetupCost = max0(numberValue(inputs.firstYearSetupCost));
   var netAnnualExpense = Math.max(annualExpense - supplementIncome, 0);
   var nominalFactor = Math.pow(1 + inflationRate, years);
   var rates = [primaryRate, 0.035, 0.03];
@@ -688,21 +723,40 @@ function calcFire(inputs) {
   var total = totals().value;
   var progress = lines[0].today > 0 ? total / lines[0].today : 0;
 
-  // ---- 达成日预测：用名义收益率把"当前净值 + 每月定投"滚到目标名义金额 ----
-  // 目标用 3.5% 稳健线的名义金额（兼顾安全与现实），可由调用方覆盖
+  // ---- 达成日预测：用名义收益率把"当前净值 + 每月定投"滚到随通胀上移的目标 ----
+  // 目标用 3.5% 稳健线的今天口径本金，滚动函数内部逐月加通胀。
   var targetNominal = lines[1].nominal;
   var monthlyContribution = max0(numberValue(inputs.monthlyContribution));
+  var phasedMonthlyContribution = calcPhasedMonthlyContribution(domesticMonthly, domesticMonths, overseasMonthly, firstYearSetupCost, years);
   var expectedAnnual = clamp(numberValue(inputs.expectedReturnPct) / 100, 0, 1);
   var monthlyRate = Math.pow(1 + expectedAnnual, 1 / 12) - 1;
-  var projection = projectMonthsToTarget(total, monthlyContribution, monthlyRate, targetNominal, inflationRate);
+  var projection = projectMonthsToTargetPhased(total, {
+    domesticMonthly: domesticMonthly,
+    domesticMonths: domesticMonths,
+    overseasMonthly: overseasMonthly,
+    firstYearSetupCost: firstYearSetupCost,
+    fallbackMonthly: monthlyContribution,
+  }, monthlyRate, lines[1].today, inflationRate);
 
   // ---- 灵敏度：每月多投 1000 / 收益率 +1% 各能提前多少个月 ----
   var sensitivity = null;
   if (projection.reachable) {
     var basMonths = projection.months;
     var plusContribRate = Math.pow(1 + expectedAnnual, 1 / 12) - 1;
-    var pc = projectMonthsToTarget(total, monthlyContribution + 1000, plusContribRate, targetNominal, inflationRate);
-    var pr = projectMonthsToTarget(total, monthlyContribution, Math.pow(1 + clamp(expectedAnnual + 0.01, 0, 1), 1 / 12) - 1, targetNominal, inflationRate);
+    var pc = projectMonthsToTargetPhased(total, {
+      domesticMonthly: domesticMonthly + 1000,
+      domesticMonths: domesticMonths,
+      overseasMonthly: overseasMonthly + 1000,
+      firstYearSetupCost: firstYearSetupCost,
+      fallbackMonthly: monthlyContribution + 1000,
+    }, plusContribRate, lines[1].today, inflationRate);
+    var pr = projectMonthsToTargetPhased(total, {
+      domesticMonthly: domesticMonthly,
+      domesticMonths: domesticMonths,
+      overseasMonthly: overseasMonthly,
+      firstYearSetupCost: firstYearSetupCost,
+      fallbackMonthly: monthlyContribution,
+    }, Math.pow(1 + clamp(expectedAnnual + 0.01, 0, 1), 1 / 12) - 1, lines[1].today, inflationRate);
     sensitivity = {
       contributionMonths: pc.reachable ? Math.max(basMonths - pc.months, 0) : null,
       returnMonths: pr.reachable ? Math.max(basMonths - pr.months, 0) : null,
@@ -723,6 +777,11 @@ function calcFire(inputs) {
     totalAssets: total,
     progress: progress,
     monthlyContribution: monthlyContribution,
+    phasedMonthlyContribution: phasedMonthlyContribution,
+    domesticMonthly: domesticMonthly,
+    domesticMonths: domesticMonths,
+    overseasMonthly: overseasMonthly,
+    firstYearSetupCost: firstYearSetupCost,
     expectedAnnual: expectedAnnual,
     targetNominal: targetNominal,
     projection: projection,
@@ -730,24 +789,54 @@ function calcFire(inputs) {
   };
 }
 
-// 月度滚动：value_{n+1} = value_n * (1+r) + contribution，直到达到（随通胀增长的）目标，返回月数
-function projectMonthsToTarget(startValue, monthlyContribution, monthlyRate, targetNominalAtHorizon, annualInflation) {
+function calcPhasedContributionForMonth(monthIndex, plan) {
+  var setupDeduct = monthIndex <= 12 ? Math.ceil(max0(numberValue(plan.firstYearSetupCost)) / 12) : 0;
+  var domesticMonths = Math.round(max0(numberValue(plan.domesticMonths)));
+  var domesticMonthly = max0(numberValue(plan.domesticMonthly));
+  var overseasMonthly = max0(numberValue(plan.overseasMonthly));
+  var fallbackMonthly = max0(numberValue(plan.fallbackMonthly));
+  var base = fallbackMonthly;
+  if (domesticMonthly > 0 || overseasMonthly > 0) {
+    base = monthIndex <= domesticMonths ? domesticMonthly : overseasMonthly;
+  }
+  return Math.max(base - setupDeduct, 0);
+}
+
+function calcPhasedMonthlyContribution(domesticMonthly, domesticMonths, overseasMonthly, firstYearSetupCost, years) {
+  var months = Math.max(Math.round(max0(years) * 12), 1);
+  var sum = 0;
+  for (var m = 1; m <= months; m += 1) {
+    sum += calcPhasedContributionForMonth(m, {
+      domesticMonthly: domesticMonthly,
+      domesticMonths: domesticMonths,
+      overseasMonthly: overseasMonthly,
+      firstYearSetupCost: firstYearSetupCost,
+      fallbackMonthly: overseasMonthly || domesticMonthly,
+    });
+  }
+  return Math.round(sum / months);
+}
+
+// 月度滚动：value_{n+1} = value_n * (1+r) + contribution，直到达到（从今天购买力随通胀增长的）目标，返回月数
+function projectMonthsToTarget(startValue, monthlyContribution, monthlyRate, targetTodayValue, annualInflation) {
+  return projectMonthsToTargetPhased(startValue, { fallbackMonthly: monthlyContribution }, monthlyRate, targetTodayValue, annualInflation);
+}
+
+function projectMonthsToTargetPhased(startValue, contributionPlan, monthlyRate, targetTodayValue, annualInflation) {
   var monthlyInflation = Math.pow(1 + max0(annualInflation), 1 / 12) - 1;
   var value = max0(startValue);
-  var target = max0(targetNominalAtHorizon);
-  var contribution = max0(monthlyContribution);
-  if (value >= target) return { reachable: true, months: 0, finalValue: value };
-  // 不增长且不投入 → 永远到不了
-  if (contribution <= 0 && monthlyRate <= 0) return { reachable: false, months: Infinity, finalValue: value };
+  var targetToday = max0(targetTodayValue);
+  if (value >= targetToday) return { reachable: true, months: 0, finalValue: value, targetValue: targetToday };
   var MAX_MONTHS = 80 * 12; // 80 年上限，超出视为不可达
-  var movingTarget = target;
+  var movingTarget = targetToday;
   for (var m = 1; m <= MAX_MONTHS; m++) {
+    var contribution = calcPhasedContributionForMonth(m, contributionPlan);
     value = value * (1 + monthlyRate) + contribution;
     // 目标本身随通胀缓慢上移，避免"名义目标固定但通胀吃掉购买力"的乐观偏差
     movingTarget = movingTarget * (1 + monthlyInflation);
-    if (value >= movingTarget) return { reachable: true, months: m, finalValue: value };
+    if (value >= movingTarget) return { reachable: true, months: m, finalValue: value, targetValue: movingTarget };
   }
-  return { reachable: false, months: Infinity, finalValue: value };
+  return { reachable: false, months: Infinity, finalValue: value, targetValue: movingTarget };
 }
 
 // 历史净值序列：从月度记录里取已填月末资产的月份，按时间排序，供折线图使用
@@ -784,6 +873,7 @@ function getFireInputs() {
   if (!annualExpenseEl) return null;
   var contribEl = document.querySelector("#fireMonthlyContribution");
   var contribRaw = contribEl ? contribEl.value : "";
+  var explicitContribution = contribRaw !== "";
   return {
     annualExpense: numberValue(annualExpenseEl.value || 180000),
     currentAge: numberValue(document.querySelector("#fireCurrentAge").value || 22),
@@ -792,7 +882,11 @@ function getFireInputs() {
     realReturnPct: numberValue(document.querySelector("#fireRealReturn").value || 4),
     supplementIncome: numberValue(document.querySelector("#fireSupplementIncome").value || 60000),
     expectedReturnPct: numberValue((document.querySelector("#fireExpectedReturn") || {}).value || 7),
-    monthlyContribution: numberValue(contribRaw !== "" ? contribRaw : estimateMonthlyContribution()),
+    monthlyContribution: numberValue(explicitContribution ? contribRaw : estimateMonthlyContribution()),
+    domesticMonthly: numberValue(((document.querySelector("#fireDomesticMonthly") || {}).value) || 4000),
+    domesticMonths: numberValue(((document.querySelector("#fireDomesticMonths") || {}).value) || 12),
+    overseasMonthly: numberValue(((document.querySelector("#fireOverseasMonthly") || {}).value) || (explicitContribution ? contribRaw : 15000)),
+    firstYearSetupCost: numberValue(((document.querySelector("#fireSetupCost") || {}).value) || 12000),
   };
 }
 
@@ -806,7 +900,7 @@ function estimateMonthlyContribution() {
     })
     .map(function (m) { return numberValue(m.invested) || numberValue(m.plannedInvested); })
     .filter(function (v) { return v > 0; });
-  if (!vals.length) return 6000;
+  if (!vals.length) return 4000;
   var sum = vals.reduce(function (s, v) { return s + v; }, 0);
   return Math.round(sum / vals.length);
 }
@@ -843,16 +937,16 @@ function renderFireDashboard(result) {
   var proj = result.projection;
   if (proj && proj.reachable) {
     if (proj.months === 0) {
-      etaEl.textContent = "已达成 🎉";
+      etaEl.textContent = "已达成";
       etaSubEl.textContent = "当前净值已覆盖 3.5% 稳健线目标";
     } else {
       etaEl.textContent = monthsToDateLabel(proj.months);
-      etaSubEl.textContent = "约 " + monthsToHuman(proj.months) + "后 · 目标 " + fireMoney(result.targetNominal)
-        + " · 月投 " + money(result.monthlyContribution) + " @ " + (result.expectedAnnual * 100).toFixed(0) + "%";
+      etaSubEl.textContent = "约 " + monthsToHuman(proj.months) + "后 · 目标 " + fireMoney(proj.targetValue || result.targetNominal)
+        + " · 国内月存 " + money(result.domesticMonthly) + " / 海外月存 " + money(result.overseasMonthly) + " @ " + (result.expectedAnnual * 100).toFixed(0) + "%";
     }
   } else {
     etaEl.textContent = "超 80 年 / 不可达";
-    etaSubEl.textContent = "提高月投入或预期收益率后再看（当前月投 " + money(result.monthlyContribution) + "）";
+    etaSubEl.textContent = "提高月投入或预期收益率后再看（国内月存 " + money(result.domesticMonthly) + " / 海外月存 " + money(result.overseasMonthly) + "）";
   }
 
   if (sensEl) {
@@ -967,7 +1061,13 @@ function drawFireChart(el, result) {
   var fv = result.totalAssets;
   var forecast = [{ value: fv }];
   for (var m = 1; m <= horizon; m++) {
-    fv = fv * (1 + monthlyRate) + result.monthlyContribution;
+    fv = fv * (1 + monthlyRate) + calcPhasedContributionForMonth(m, {
+      domesticMonthly: result.domesticMonthly,
+      domesticMonths: result.domesticMonths,
+      overseasMonthly: result.overseasMonthly,
+      firstYearSetupCost: result.firstYearSetupCost,
+      fallbackMonthly: result.monthlyContribution,
+    });
     if (m % step === 0 || m === horizon) forecast.push({ value: fv });
   }
 
@@ -976,7 +1076,8 @@ function drawFireChart(el, result) {
   });
   if (!histSeries.length) histSeries = [{ value: result.totalAssets, label: "今天" }];
 
-  var maxVal = Math.max(result.targetNominal, fv, result.totalAssets) * 1.08;
+  var chartTarget = proj && proj.reachable && proj.targetValue ? proj.targetValue : result.targetNominal;
+  var maxVal = Math.max(chartTarget, fv, result.totalAssets) * 1.08;
 
   // 达成点坐标（在预测线末段）
   var specialDot = null;
@@ -985,20 +1086,20 @@ function drawFireChart(el, result) {
     var totalPts = histSeries.length - 1 + forecast.length - 1;
     var fcIdx = forecast.length - 1;
     var cx = totalPts > 0 ? padL + ((histSeries.length - 1 + fcIdx) / totalPts) * (W - padL - padR) : W - padR;
-    var ty = 10 + (120 - 10 - 22) - (Math.max(result.targetNominal, 0) / maxVal) * (120 - 10 - 22);
+    var ty = 10 + (120 - 10 - 22) - (Math.max(chartTarget, 0) / maxVal) * (120 - 10 - 22);
     specialDot = { cx: cx, cy: ty, label: monthsToDateLabel(proj.months) };
   }
 
   drawLineChart(el, histSeries, {
     H: 140, padL: 28,
     maxVal: maxVal,
-    targetVal: result.targetNominal,
+    targetVal: chartTarget,
     targetLabel: "目标",
     forecastSeries: forecast,
     emptyText: "在「月度」里填月末总资产后显示曲线。",
     specialDot: specialDot,
     yLabels: [
-      { value: result.targetNominal, label: fireMoney(result.targetNominal) },
+      { value: chartTarget, label: fireMoney(chartTarget) },
     ],
   });
 }
@@ -1264,6 +1365,7 @@ function refreshAllocation() {
   document.querySelector("#allocFinalInvest").textContent = money(result.allocatedTotal);
   document.querySelector("#allocRemaining").textContent = money(result.actualRemainingCash);
   renderAllocationChecklist(result);
+  renderOpportunityChecker();
 
   // Hint
   var hint = document.querySelector("#allocHint");
@@ -1359,6 +1461,168 @@ function renderAllocationChecklist(result) {
       '<div class="checklist-item primary"><span>本月计划投资</span><strong>' + money(result.allocatedTotal) + '</strong><small>' + investDetail + '</small></div>' +
       '<div class="checklist-item"><span>暂存/剩余现金</span><strong>' + money(result.actualRemainingCash) + '</strong><small>' + remainingDetail + '</small></div>' +
     '</div>';
+}
+
+function opportunityTriggerKey(assetId, pctValue) {
+  return assetId + "_" + pctValue;
+}
+
+function getOpportunityAmmo() {
+  var cashValue = data.assets
+    .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
+    .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
+  return Math.max(0, cashValue - goal);
+}
+
+function opportunityDestinationLabel(asset) {
+  if (!asset) return "";
+  if (!isBufferedStatus(asset.status)) return "可直接买入";
+  var dest = data.assets.find(function (a) { return a.id === asset.bufferDestinationId && a.id !== asset.id; }) ||
+    data.assets.find(function (a) { return a.name === asset.bufferDestination && a.id !== asset.id; }) ||
+    data.assets.find(function (a) { return a.id === BUFFER_DEFAULT_ID && a.id !== asset.id; }) ||
+    data.assets.find(function (a) { return a.name === BUFFER_DEFAULT && a.id !== asset.id; });
+  return "当前暂存到" + ((dest && dest.name) || asset.bufferDestination || BUFFER_DEFAULT);
+}
+
+function calcOpportunityPlan(selectedTriggers) {
+  var selected = selectedTriggers || {};
+  var ammo = getOpportunityAmmo();
+  var maxBudget = Math.min(Math.round(ammo * 0.3), OPPORTUNITY_BUDGET_CAP);
+  var total = totals();
+  var items = [];
+  var activeItems = [];
+
+  DRAWDOWN_RULES.forEach(function (rule) {
+    var asset = data.assets.find(function (a) { return a.id === rule.assetId; });
+    if (!asset) return;
+    rule.triggers.forEach(function (trigger) {
+      var key = opportunityTriggerKey(rule.assetId, trigger.pct);
+      if (!selected[key]) return;
+      var blocked = false;
+      var reason = "";
+      if (asset.layer === "投机层" && total.specRatio >= 0.10) {
+        blocked = true;
+        reason = "投机层已达10%，暂停";
+      } else if (String(asset.status || "") === "paused:manual") {
+        blocked = true;
+        reason = "已手动暂停";
+      }
+      var item = {
+        key: key,
+        assetId: asset.id,
+        name: asset.name,
+        layer: asset.layer,
+        triggerPct: trigger.pct,
+        units: trigger.units,
+        amount: 0,
+        blocked: blocked,
+        reason: reason,
+        note: blocked ? reason : opportunityDestinationLabel(asset),
+      };
+      items.push(item);
+      if (!blocked) activeItems.push(item);
+    });
+  });
+
+  var totalUnits = activeItems.reduce(function (s, item) { return s + numberValue(item.units); }, 0);
+  var suggestedTotal = 0;
+  if (maxBudget > 0 && totalUnits > 0) {
+    var unitAmount = Math.floor(maxBudget / totalUnits);
+    activeItems.forEach(function (item, index) {
+      var isLast = index === activeItems.length - 1;
+      var remaining = Math.max(maxBudget - suggestedTotal, 0);
+      var amount = isLast ? remaining : Math.min(Math.round(unitAmount * item.units), remaining);
+      item.amount = amount;
+      suggestedTotal += amount;
+    });
+  }
+
+  return {
+    ammo: ammo,
+    maxBudget: maxBudget,
+    suggestedTotal: suggestedTotal,
+    totalUnits: totalUnits,
+    items: items,
+    specRatio: total.specRatio,
+  };
+}
+
+function selectedOpportunityTriggers() {
+  var selected = {};
+  document.querySelectorAll("#opportunityChecker input[data-trigger-key]").forEach(function (input) {
+    if (input.checked) selected[input.getAttribute("data-trigger-key")] = true;
+  });
+  return selected;
+}
+
+function renderOpportunityChecker() {
+  var wrap = document.querySelector("#opportunityChecker");
+  if (!wrap) return;
+  var panel = wrap.querySelector(".opportunity-panel");
+  var keepOpen = !!(panel && panel.open);
+  var selected = selectedOpportunityTriggers();
+  var plan = calcOpportunityPlan(selected);
+  if (Object.keys(selected).length) keepOpen = true;
+
+  if (plan.ammo <= 0) {
+    wrap.innerHTML =
+      '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + '>' +
+        '<summary><span>机会补仓检查</span><small>本月没有可用弹药</small></summary>' +
+        '<div class="opportunity-empty">现金层未超过应急金目标，先不动用弹药。请先在资产页更新现金层市值。</div>' +
+      '</details>';
+    return;
+  }
+
+  var controls = DRAWDOWN_RULES.map(function (rule) {
+    var asset = data.assets.find(function (a) { return a.id === rule.assetId; });
+    if (!asset) return "";
+    var blockedText = "";
+    if (asset.layer === "投机层" && plan.specRatio >= 0.10) blockedText = "投机层已达10%，暂停";
+    else if (String(asset.status || "") === "paused:manual") blockedText = "已手动暂停";
+    var triggerHtml = rule.triggers.map(function (trigger) {
+      var key = opportunityTriggerKey(rule.assetId, trigger.pct);
+      var checked = selected[key] ? " checked" : "";
+      var disabled = blockedText ? " disabled" : "";
+      return '<label class="opportunity-trigger">' +
+        '<input type="checkbox" data-trigger-key="' + esc(key) + '"' + checked + disabled + '>' +
+        '<span>跌 ' + trigger.pct + '%+ <small>' + trigger.units + '份</small></span>' +
+      '</label>';
+    }).join("");
+    return '<div class="opportunity-asset">' +
+      '<div><b>' + esc(asset.name) + '</b><small>' + esc(opportunityDestinationLabel(asset)) + (blockedText ? " · " + esc(blockedText) : "") + '</small></div>' +
+      '<div class="opportunity-triggers">' + triggerHtml + '</div>' +
+    '</div>';
+  }).join("");
+
+  var itemsHtml = plan.items.length
+    ? plan.items.map(function (item) {
+      var amount = item.blocked ? "¥0" : money(item.amount);
+      var note = item.blocked ? item.reason : item.note;
+      return '<div class="opportunity-result-row' + (item.blocked ? " blocked" : "") + '">' +
+        '<span>' + esc(item.name) + ' <small>跌 ' + item.triggerPct + '%+</small></span>' +
+        '<strong>' + amount + '</strong>' +
+        '<em>' + esc(note) + '</em>' +
+      '</div>';
+    }).join("")
+    : '<div class="opportunity-empty">勾选已确认的回撤条件后显示建议金额。</div>';
+
+  wrap.innerHTML =
+    '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + '>' +
+      '<summary><span>机会补仓检查</span><small>可选，仅在市场明显回撤时打开</small></summary>' +
+      '<div class="opportunity-metrics">' +
+        '<div><span>可用弹药</span><strong>' + money(plan.ammo) + '</strong><small>现金层 - 应急金目标</small></div>' +
+        '<div><span>本次建议最多动用</span><strong>' + money(plan.maxBudget) + '</strong><small>30%弹药，封顶 ' + money(OPPORTUNITY_BUDGET_CAP) + '</small></div>' +
+        '<div><span>当前建议</span><strong>' + money(plan.suggestedTotal) + '</strong><small>只显示，不保存</small></div>' +
+      '</div>' +
+      '<div class="opportunity-note">请先在资产页更新现金层市值。App 不判断行情，只按你勾选的回撤纪律计算金额。</div>' +
+      '<div class="opportunity-list">' + controls + '</div>' +
+      '<div class="opportunity-results">' + itemsHtml + '</div>' +
+    '</details>';
+
+  wrap.querySelectorAll("input[data-trigger-key]").forEach(function (input) {
+    input.addEventListener("change", renderOpportunityChecker);
+  });
 }
 
 function saveAllocation() {
@@ -1499,7 +1763,7 @@ document.addEventListener("DOMContentLoaded", function () {
   var saveBtn = document.querySelector("#allocSaveBtn");
   if (saveBtn) saveBtn.addEventListener("click", saveAllocation);
 
-  ["#fireAnnualExpense", "#fireCurrentAge", "#fireTargetAge", "#fireInflationRate", "#fireRealReturn", "#fireSupplementIncome", "#fireExpectedReturn", "#fireMonthlyContribution"].forEach(function (selector) {
+  ["#fireAnnualExpense", "#fireCurrentAge", "#fireTargetAge", "#fireInflationRate", "#fireRealReturn", "#fireSupplementIncome", "#fireExpectedReturn", "#fireMonthlyContribution", "#fireDomesticMonthly", "#fireDomesticMonths", "#fireOverseasMonthly", "#fireSetupCost"].forEach(function (selector) {
     var input = document.querySelector(selector);
     if (input) input.addEventListener("input", renderFire);
   });
@@ -1591,7 +1855,7 @@ function openAssetEditor(id) {
       { key: "element", label: "五行", type: "select", options: ["金", "水", "土", "火", "金水"] },
       { key: "type", label: "产品类型" },
       { key: "target", label: "目标占比（%）", type: "number", pctInput: true },
-      { key: "status", label: "状态", type: "select", options: ["available", "buffered"], hint: "buffered=暂存到下方指定产品（如 QDII 限购阶段）" },
+      { key: "status", label: "状态", type: "select", options: ["available", "buffered", "paused:manual"], hint: "buffered=暂存到下方指定产品；paused:manual=手动暂停，本月不投" },
       { key: "bufferDestinationId", label: "暂存去向（仅 buffered 时生效）", type: "select", options: destOptions },
       { key: "value", label: "当前市值", type: "number" },
       { key: "cost", label: "累计投入", type: "number" },
@@ -1840,6 +2104,14 @@ function reverseEntryLink(entry) {
   entry.linkedAmount = 0;
 }
 
+function entryLinkFieldsChanged(original, updated) {
+  if (!original) return false;
+  return String(original.kind || "") !== String(updated.kind || "") ||
+    String(original.date || "") !== String(updated.date || "") ||
+    numberValue(original.amount) !== numberValue(updated.amount) ||
+    String(original.target || "").trim() !== String(updated.target || "").trim();
+}
+
 // 应用一条投资 entry 的联动：把金额加到匹配资产的累计投入 + 当月实际投入，并在 entry 上记账
 // 返回被联动的资产对象（用于市值快捷提示），无匹配资产返回 null
 function applyEntryLink(entry) {
@@ -1948,11 +2220,24 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
   let linkedAsset = null;
   let linkedAmount = 0;
   if (editing.collection === "entries") {
-    if (index >= 0) reverseEntryLink(collection[index]); // 冲销 collection 里的原始记录
-    if (index >= 0) collection[index] = updated;
-    else collection.push(updated);
-    linkedAsset = applyEntryLink(updated);
-    linkedAmount = numberValue(updated.linkedAmount);
+    var originalEntry = index >= 0 ? collection[index] : null;
+    var originalLinkedAmount = numberValue(originalEntry && originalEntry.linkedAmount);
+    if (originalEntry && originalLinkedAmount > 0 && !isLinkEnabled()) {
+      if (entryLinkFieldsChanged(originalEntry, updated)) {
+        alert("这条投资记录已经联动到资产/月度。关闭自动联动时不能修改日期、类型、金额或去向；请先打开自动联动再修改，或删除后重记。");
+        return;
+      }
+      updated.linkedAssetId = originalEntry.linkedAssetId || "";
+      updated.linkedMonth = originalEntry.linkedMonth || "";
+      updated.linkedAmount = originalLinkedAmount;
+      collection[index] = updated;
+    } else {
+      if (index >= 0) reverseEntryLink(collection[index]); // 冲销 collection 里的原始记录
+      if (index >= 0) collection[index] = updated;
+      else collection.push(updated);
+      linkedAsset = applyEntryLink(updated);
+      linkedAmount = numberValue(updated.linkedAmount);
+    }
     localStorage.setItem(LAST_KIND_KEY, String(updated.kind || "投资")); // 记住类型作下次默认
   } else {
     if (editing.collection === "monthly") {
@@ -2042,7 +2327,7 @@ async function initCloudSync(options = {}) {
         persistLocal();
         render();
         if (record.legacy) {
-          window.supabase.setStatus("legacy", "正在使用旧同步策略；执行新版 schema.sql 后会自动切换为安全同步。");
+          window.supabase.setStatus("legacy", "检测到旧版同步记录；建议导出备份后重新生成同步码迁移到当前云同步。");
         } else {
           window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
         }

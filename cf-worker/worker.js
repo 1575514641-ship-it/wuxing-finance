@@ -66,13 +66,16 @@ export default {
 
       // upsert：存在就更新（校验 secret），不存在就插入
       const existing = await env.DB.prepare(
-        "SELECT secret_hash FROM user_data WHERE user_id = ?"
+        "SELECT secret_hash, updated_at FROM user_data WHERE user_id = ?"
       )
         .bind(body.userId)
         .first();
 
       if (existing && existing.secret_hash !== hash) {
         return err("secret 不匹配，拒绝覆盖", 403);
+      }
+      if (existing && timeValue(existing.updated_at) > timeValue(updatedAt)) {
+        return json({ error: "云端数据更新，拒绝用旧快照覆盖", cloudUpdatedAt: existing.updated_at }, 409);
       }
 
       await env.DB.prepare(
@@ -97,4 +100,9 @@ async function sha256(text) {
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function timeValue(value) {
+  const time = Date.parse(value || "");
+  return Number.isFinite(time) ? time : 0;
 }
