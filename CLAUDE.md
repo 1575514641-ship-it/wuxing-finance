@@ -6,7 +6,7 @@
 - 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已删除）。
 - 线上地址：<https://www0706.netlify.app/>
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前版本：v7.22（上班前收官版）。
+- 当前版本：v7.23（上班前收官版 v7.22 + 产品代码/费率勘误）。
 
 ## 运行与验证
 

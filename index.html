@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.22</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.23</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -304,15 +304,15 @@
             <thead><tr><th>层级</th><th>产品</th><th>代码</th><th>年费率</th><th>渠道</th></tr></thead>
             <tbody>
               <tr><td>现金</td><td>余额宝/南方天天利B</td><td>000198/003474</td><td>0.2-0.6%</td><td>支付宝</td></tr>
-              <tr><td>防御</td><td>华安黄金ETF</td><td>518880</td><td>0.20%</td><td>券商场内</td></tr>
-              <tr><td>防御</td><td>广发政金债7-10年A</td><td>009547</td><td>0.20%</td><td>支付宝/天天基金</td></tr>
+              <tr><td>防御</td><td>华安黄金ETF</td><td>518880</td><td>0.60%</td><td>券商场内</td></tr>
+              <tr><td>防御</td><td>广发中债7-10年国开债指数A</td><td>003376</td><td>0.20%</td><td>支付宝/天天基金</td></tr>
               <tr><td>生财</td><td>华泰柏瑞沪深300ETF</td><td>510300</td><td>0.20%</td><td>券商场内</td></tr>
               <tr><td>生财</td><td>国泰中证A500ETF</td><td>159338</td><td>0.20%</td><td>券商场内</td></tr>
               <tr><td>生财</td><td>南方中证500ETF</td><td>510500</td><td>0.20%</td><td>券商场内</td></tr>
-              <tr><td>生财</td><td>华泰柏瑞红利低波ETF</td><td>159546</td><td>0.20%</td><td>券商场内</td></tr>
-              <tr><td>成长</td><td>易方达标普500ETF</td><td>513500</td><td>0.85%</td><td>券商场内(不限购)</td></tr>
-              <tr><td>成长</td><td>易方达标普医疗QDII</td><td>161126</td><td>1.05%</td><td>支付宝/天天基金</td></tr>
-              <tr><td>投机</td><td>华安纳斯达克100ETF</td><td>513300</td><td>0.60%</td><td>券商场内(看溢价)</td></tr>
+              <tr><td>生财</td><td>华泰柏瑞红利低波ETF</td><td>512890</td><td>0.60%</td><td>券商场内</td></tr>
+              <tr><td>成长</td><td>博时标普500ETF</td><td>513500</td><td>0.80%</td><td>券商场内(不限购)</td></tr>
+              <tr><td>成长</td><td>易方达标普医疗QDII</td><td>161126</td><td>1.00%</td><td>支付宝/天天基金</td></tr>
+              <tr><td>投机</td><td>华安纳斯达克100ETF</td><td>159632</td><td>0.80%</td><td>券商场内(看溢价)</td></tr>
             </tbody>
           </table>
           <small class="rule-note">场内ETF需开券商账户（推荐东方财富/华泰，佣金万1免五）。QDII场内注意溢价率。</small>
@@ -323,9 +323,9 @@
           <summary>税费速查</summary>
           <div class="rule-grid">
           <article><b>QDII税收</b><span>美国股息预扣由基金处理。个人境外所得和税务居民身份按公司税务安排确认，不要默认免申报。</span></article>
-          <article><b>A股ETF</b><span>管理费+托管费0.20%/年。卖出印花税0.05%。无资本利得税。</span></article>
+          <article><b>A股ETF</b><span>宽基管理费+托管费约0.20%/年，黄金/红利低波约0.60%/年。基金交易免征印花税（股票卖出才收0.05%）。资本利得暂免个税。</span></article>
           <article><b>海外券商(IB)</b><span>VOO费率0.03%。美国股息税10%(W-8BEN)。美国资本利得税0%(非居民)。中国CGT理论20%实际未征。</span></article>
-          <article><b>费率差距</b><span>QDII标普(0.85%) vs 直接VOO(0.03%)：每100万持有20年，QDII少赚约20万。出海后迁移是确定性红利。</span></article>
+          <article><b>费率差距</b><span>QDII标普(0.80%) vs 直接VOO(0.03%)：费率差0.77%/年会复利放大，100万持有20年终值少约50万。出海后迁移是确定性红利。</span></article>
           </div>
         </details>
 
@@ -544,11 +544,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-22"></script>
+  <script src="./sync.js?v=7-23"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-22"></script>
+  <script src="./app.js?v=7-23"></script>
 </body>
 </html>
