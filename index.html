@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.23</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v7.24</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -290,8 +290,8 @@
           <article><b>IB材料准备</b><span>先准备护照、派驻通知、收入证明、地址证明；开户不强行抢跑，等派驻地和工资路径确认后执行。</span></article>
           <article><b>双轨制</b><span>国内存量RMB继续持有A股+黄金+纯债（不操作）。海外工资直接在海外投资，不换回RMB。</span></article>
           <article><b>开IB账户</b><span>拿到派驻地、海外银行和收入证明后再开Interactive Brokers。新增海外资金优先走海外路径，不占国内购汇额度。</span></article>
-          <article><b>迁移QDII</b><span>到达6-12个月后逐步赎回国内QDII（选净值高点），资金转入IB买VOO/QQQ。年省0.4-0.8%费率。</span></article>
-          <article><b>最终形态</b><span>国内只留A股ETF+黄金+纯债（0.20%费率）。海外资产全在IB：VOO 0.03%、QQQ 0.20%、IXJ 0.40%。</span></article>
+          <article><b>复核QDII路径</b><span>出海后先核实账户资格、税费和合规资金路径，再决定是否调整国内QDII。不预设国内赎回资金可直接换汇投资境外证券，也不把择时卖在高点作为计划前提。</span></article>
+          <article><b>最终形态</b><span>国内只留A股ETF+黄金+纯债（0.20%费率）。海外资产全在IB：VOO 0.03%、QQQ 0.18%、IXJ 0.40%。</span></article>
           <article><b>汇率管理</b><span>每月固定比例换汇，不赌汇率。保留20-30%资产在RMB（回国/家人/A股）。</span></article>
           <article><b>应急金分两地</b><span>50% RMB（余额宝，覆盖回国）+ 50% 当地货币（本地银行，覆盖海外突发）。</span></article>
           </div>
@@ -324,8 +324,8 @@
           <div class="rule-grid">
           <article><b>QDII税收</b><span>美国股息预扣由基金处理。个人境外所得和税务居民身份按公司税务安排确认，不要默认免申报。</span></article>
           <article><b>A股ETF</b><span>宽基管理费+托管费约0.20%/年，黄金/红利低波约0.60%/年。基金交易免征印花税（股票卖出才收0.05%）。资本利得暂免个税。</span></article>
-          <article><b>海外券商(IB)</b><span>VOO费率0.03%。美国股息税10%(W-8BEN)。美国资本利得税0%(非居民)。中国CGT理论20%实际未征。</span></article>
-          <article><b>费率差距</b><span>QDII标普(0.80%) vs 直接VOO(0.03%)：费率差0.77%/年会复利放大，100万持有20年终值少约50万。出海后迁移是确定性红利。</span></article>
+          <article><b>海外券商(IB)</b><span>VOO费率0.03%。税率与申报义务取决于税务居民身份、收入性质及税收协定；W-8BEN不代表自动适用10%股息税，不默认境外所得免申报。</span></article>
+          <article><b>费率差距</b><span>QDII标普(0.80%) vs 直接VOO(0.03%)：列示费率相差0.77个百分点/年。实际迁移成本还包括汇兑、交易、税务及账户条件，不能仅凭费率判断。</span></article>
           </div>
         </details>
 
@@ -384,12 +384,12 @@
             <p>FIRE 不是退休，是有选择权。今天购买力和目标年龄名义金额分开看。</p>
           </div>
         </div>
-        <div class="guard-note">当前为方向测算。真实税后工资、房租、汇率、保险和派驻地确认后，再把这里作为正式路线图。</div>
+        <div class="guard-note">当前为方向测算。真实税后工资、房租、汇率、保险和派驻地确认后，再把这里作为正式路线图。劳动收入是可选情景，不是保证收入；测算默认其购买力持续，兼职中断或停止后需要重算。提款比例不代表保证收益。</div>
 
         <div class="alloc-inputs fire-inputs">
           <div class="alloc-field">
             <label for="fireAnnualExpense">目标年支出（今天购买力）</label>
-            <input id="fireAnnualExpense" type="text" inputmode="decimal" value="180000">
+            <input id="fireAnnualExpense" type="text" inputmode="decimal" value="120000">
           </div>
           <div class="alloc-field">
             <label for="fireCurrentAge">当前年龄</label>
@@ -408,7 +408,7 @@
             <input id="fireRealReturn" type="text" inputmode="decimal" value="4">
           </div>
           <div class="alloc-field">
-            <label for="fireSupplementIncome">半 FIRE 后年补充收入</label>
+            <label for="fireSupplementIncome">半 FIRE 后年税后净劳动收入（今天购买力）</label>
             <input id="fireSupplementIncome" type="text" inputmode="decimal" value="60000">
           </div>
           <div class="alloc-field">
@@ -437,6 +437,7 @@
           </div>
         </div>
 
+        <div id="fireNoWork" class="guard-note" aria-live="polite"></div>
         <div id="fireResult" class="alloc-result fire-result">
           <div class="fire-grid">
             <div class="fire-card">
@@ -544,11 +545,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=7-23"></script>
+  <script src="./sync.js?v=7-24"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=7-23"></script>
+  <script src="./app.js?v=7-24"></script>
 </body>
 </html>

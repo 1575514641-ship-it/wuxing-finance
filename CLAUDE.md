@@ -6,7 +6,7 @@
 - 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已删除）。
 - 线上地址：<https://www0706.netlify.app/>
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前版本：v7.23（上班前收官版 v7.22 + 产品代码/费率勘误）。
+- 当前版本：v7.24（手动暂停分配修复 + 12 万年支出及零劳动收入对照）。
 
 ## 运行与验证
 
@@ -69,7 +69,8 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - `allocatedTotal` 是实际分配出去的金额；全部偏高或去向不可用时可小于 `investBase`。
 - `actualRemainingCash = cashflowAvailable - allocatedTotal`。
 - `plannedInvested = allocatedTotal`，不是 `investBase`。
-- 暂存重定向正常可用时，应保持 `allocatedTotal === investBase`。
+- 无手动暂停、无其他跳过且暂存重定向正常可用时，应保持 `allocatedTotal === investBase`。
+- `paused:manual` 建议金额必须为 0；其归一化目标份额计入 `manualPausedCash`，保留为未分配现金，不重分配给其他资产。它包含在 `actualRemainingCash` 中，不能重复相加。
 - `unbufferedCash` 只表示暂存去向不可用而留在现金里的金额，不能和 `actualRemainingCash` 双算。
 
 ## 重要函数
@@ -81,7 +82,7 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - `computeEffectiveTargets(assets)`：计算含暂存汇入后的有效目标；资产页和分配页都依赖它。
 - `calcOpportunityPlan(selectedTriggers)`：机会补仓检查器纯函数；弹药=现金层 available 市值 - 应急金目标，单次预算=min(弹药30%, 5000)，只显示建议，不写任何数据。矿股不在 `DRAWDOWN_RULES`，不做机会补仓对象。
 - `calcAllocation(inputs)`：核心分配引擎。
-- `calcFire(inputs)`：FIRE 测算纯函数，不读写 data；含达成日预测、灵敏度、目标线计算，并支持国内/海外两段月存与首年安家支出。
+- `calcFire(inputs)`：FIRE 测算读取 `totals()` 的当前资产，不写 data；含达成日预测、灵敏度、目标线计算，并支持国内/海外两段月存与首年安家支出。
 - `projectMonthsToTarget(...)` / `projectMonthsToTargetPhased(...)`：月度复利滚动求达成月数；目标随通胀上移，80 年内不可达返回 `reachable:false`。
 - `fireHistorySeries()` / `drawFireChart(...)`：从月度 `monthEndAssets` 取历史净值，纯 SVG 画历史实线 + 预测虚线 + 目标线。
 

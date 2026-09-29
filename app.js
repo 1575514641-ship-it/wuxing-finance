@@ -904,7 +904,7 @@ function getFireInputs() {
   var contribRaw = contribEl ? contribEl.value : "";
   var explicitContribution = contribRaw !== "";
   return {
-    annualExpense: numberValue(annualExpenseEl.value || 180000),
+    annualExpense: numberValue(annualExpenseEl.value || 120000),
     currentAge: numberValue(document.querySelector("#fireCurrentAge").value || 22),
     targetAge: numberValue(document.querySelector("#fireTargetAge").value || 35),
     inflationRatePct: numberValue(document.querySelector("#fireInflationRate").value || 3),
@@ -953,6 +953,15 @@ function renderFire() {
   document.querySelector("#fireProgressBar").style.width = Math.min(result.progress, 1) * 100 + "%";
 
   renderFireDashboard(result);
+  var noWork = calcFire(Object.assign({}, inputs, { supplementIncome: 0 }));
+  var noWorkEl = document.querySelector("#fireNoWork");
+  if (noWorkEl) {
+    var noWorkEta = noWork.projection.reachable
+      ? (noWork.projection.months === 0 ? "当前已达模型目标" : monthsToDateLabel(noWork.projection.months) + "（约 " + monthsToHuman(noWork.projection.months) + "后）")
+      : "80 年内未达模型目标";
+    noWorkEl.textContent = "全年不工作对照（年劳动收入 0，3.5% 提款情景）：今天本金 " + fireMoney(noWork.lines[1].today)
+      + "，目标年龄名义本金 " + fireMoney(noWork.lines[1].nominal) + "；预计 " + noWorkEta + "。";
+  }
 }
 
 // FIRE 仪表盘：达成日 + 灵敏度 + 净值历史曲线（含预测线）
@@ -1204,10 +1213,14 @@ function calcAllocation(inputs) {
   var pool = [];
   var skipped = [];
   var bufferedList = []; // status === "buffered" 的产品，单独算重定向
+  var manualPausedNormSum = 0;
   norms.forEach(function (n) {
     var currentRatio = totalAssets > 0 ? numberValue(n.asset.value) / totalAssets : 0;
     var gap = currentRatio - n.effectiveTarget;
-    if (speculativePaused && n.asset.layer === "投机层") {
+    if (n.asset.status === "paused:manual") {
+      manualPausedNormSum += n.normTarget;
+      skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "手动暂停（份额留作现金）" });
+    } else if (speculativePaused && n.asset.layer === "投机层") {
       skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "投机层超限暂停" });
     } else if (isBufferedStatus(n.asset.status)) {
       bufferedList.push({ asset: n.asset, normTarget: n.normTarget, gap: gap });
@@ -1221,7 +1234,9 @@ function calcAllocation(inputs) {
   // 计算 buffered 应得总额（按它们的归一化权重，从 investBase 中预扣）
   var bufferedNormSum = bufferedList.reduce(function (s, b) { return s + b.normTarget; }, 0);
   var bufferedAllocTotal = Math.min(Math.round(investBase * bufferedNormSum), investBase);
-  var poolInvestBase = investBase - bufferedAllocTotal;
+  // Preserve the paused share as cash without increasing other asset allocations.
+  var manualPausedCash = Math.min(Math.round(investBase * manualPausedNormSum), investBase - bufferedAllocTotal);
+  var poolInvestBase = investBase - bufferedAllocTotal - manualPausedCash;
 
   // 可投池权重（pool 内部按 poolWeightSum 分 poolInvestBase）
   var poolWeightSum = pool.reduce(function (s, p) { return s + p.normTarget; }, 0);
@@ -1331,6 +1346,7 @@ function calcAllocation(inputs) {
     bufferedCount: bufferedList.length,
     bufferedAllocTotal: bufferedAllocTotal,
     unbufferedCash: unbufferedCash,
+    manualPausedCash: manualPausedCash,
     products: products,
     layers: layerList,
   };
@@ -1338,6 +1354,7 @@ function calcAllocation(inputs) {
 
 function statusLabel(layer) {
   if (layer.allSkipped && layer.products.some(function (p) { return p.reason === "投机层超限暂停"; })) return "超限暂停";
+  if (layer.allSkipped && layer.products.some(function (p) { return p.asset.status === "paused:manual"; })) return "手动暂停";
   if (layer.allSkipped && layer.products.every(function (p) { return p.reason === "暂存中" || p.reason === "暂存（去向不可用）"; })) return "全部暂存";
   if (layer.allSkipped) return "偏高暂停";
   if (layer.hasSkipped) return "部分暂停";
@@ -1416,7 +1433,7 @@ function refreshAllocation() {
     hint.textContent = "投机层已达到或超过 10%，本月自动暂停给投机层分配新资金。";
   } else if (result.allocatedTotal < result.investBase) {
     hint.style.display = "block";
-    hint.textContent = "部分产品偏高已暂停。原始建议投资额度：" + money(result.investBase);
+    hint.textContent = "部分产品暂停或暂存去向不可用，未分配金额保留现金。原始建议投资额度：" + money(result.investBase);
   }
 
   // Layers
@@ -1481,7 +1498,9 @@ function renderAllocationChecklist(result) {
   if (!wrap) return;
   var inputs = result.inputs;
   var remainingDetail = result.unbufferedCash > 0 ? "含去向不可用暂存 " + money(result.unbufferedCash) : "可继续保留现金";
-  var investDetail = result.bufferedAllocTotal > 0 ? "含暂存 " + money(result.bufferedAllocTotal) : "按目标直接买入";
+  if (result.manualPausedCash > 0) remainingDetail += "；含手动暂停份额 " + money(result.manualPausedCash);
+  var redirectedTotal = result.bufferedAllocTotal - result.unbufferedCash;
+  var investDetail = redirectedTotal > 0 ? "含已重定向暂存 " + money(redirectedTotal) : "按可投目标分配";
   wrap.innerHTML =
     '<div class="checklist-title">工资到账后操作清单</div>' +
     '<div class="checklist-grid">' +
