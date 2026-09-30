@@ -30,15 +30,7 @@ export default {
 
     // 初始化表（首次部署调用一次即可，之后可删掉这个路由）
     if (path === "/sync/init" && request.method === "POST") {
-      await env.DB.exec(`
-        CREATE TABLE IF NOT EXISTS user_data (
-          user_id TEXT NOT NULL,
-          secret_hash TEXT NOT NULL,
-          data TEXT NOT NULL DEFAULT '{}',
-          updated_at TEXT NOT NULL,
-          PRIMARY KEY (user_id)
-        )
-      `);
+      await env.DB.exec(`CREATE TABLE IF NOT EXISTS user_data (user_id TEXT NOT NULL, secret_hash TEXT NOT NULL, data TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL, PRIMARY KEY (user_id))`);
       return json({ ok: true, msg: "table ready" });
     }
 
