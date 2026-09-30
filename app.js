@@ -81,14 +81,16 @@ let editing = null;
 let syncTimer = null;
 let syncInFlight = false;
 let syncPending = false;
+let dataRevision = 0;
+let syncSwitchInFlight = false;
 
-function fillMissingMonths() {
-  if (!Array.isArray(data.monthly)) data.monthly = [];
-  if (!data.monthly.length) {
-    data.monthly = makeDefaultMonths();
+function fillMissingMonths(source = data) {
+  if (!Array.isArray(source.monthly)) source.monthly = [];
+  if (!source.monthly.length) {
+    source.monthly = makeDefaultMonths();
     return;
   }
-  const last = data.monthly[data.monthly.length - 1];
+  const last = source.monthly[source.monthly.length - 1];
   const [y, m] = (last.month || "").split("/").map(Number);
   if (!y || !m) return;
   const lastDate = new Date(y, m - 1, 1);
@@ -96,9 +98,9 @@ function fillMissingMonths() {
   const target = new Date(now.getFullYear(), now.getMonth() + 12, 1); // 12 months ahead
   while (lastDate < target) {
     lastDate.setMonth(lastDate.getMonth() + 1);
-    const existing = data.monthly.find((item) => item.month === `${lastDate.getFullYear()}/${lastDate.getMonth() + 1}`);
+    const existing = source.monthly.find((item) => item.month === `${lastDate.getFullYear()}/${lastDate.getMonth() + 1}`);
     if (!existing) {
-      data.monthly.push({
+      source.monthly.push({
         id: crypto.randomUUID(),
         month: `${lastDate.getFullYear()}/${lastDate.getMonth() + 1}`,
         income: 0,
@@ -111,8 +113,8 @@ function fillMissingMonths() {
     }
   }
   // Keep at most 24 months (trim oldest)
-  if (data.monthly.length > 24) {
-    data.monthly = data.monthly.slice(data.monthly.length - 24);
+  if (source.monthly.length > 24) {
+    source.monthly = source.monthly.slice(source.monthly.length - 24);
   }
 }
 fillMissingMonths();
@@ -127,6 +129,48 @@ function loadData() {
   }
 }
 
+function validateLedgerData(input) {
+  const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  const fail = (path) => { throw new Error(`备份格式不正确：${path}`); };
+  const fields = (row, path, strings = [], numbers = [], booleans = []) => {
+    if (!isRecord(row)) fail(path);
+    strings.forEach((key) => {
+      if (typeof row[key] !== "undefined" && typeof row[key] !== "string") fail(`${path}.${key}`);
+    });
+    numbers.forEach((key) => {
+      const value = row[key];
+      if (typeof value === "undefined") return;
+      if ((typeof value !== "number" && typeof value !== "string") || !Number.isFinite(Number(value))) fail(`${path}.${key}`);
+    });
+    booleans.forEach((key) => {
+      if (typeof row[key] !== "undefined" && typeof row[key] !== "boolean") fail(`${path}.${key}`);
+    });
+  };
+  if (!isRecord(input)) fail("账本");
+  ["assets", "monthly", "entries"].forEach((key) => {
+    if (!Array.isArray(input[key])) fail(key);
+  });
+  input.assets.forEach((row, index) => fields(row, `assets[${index}]`,
+    ["id", "layer", "element", "name", "type", "status", "bufferDestinationId", "bufferDestination", "updated", "note"],
+    ["target", "value", "cost"]));
+  input.monthly.forEach((row, index) => {
+    const path = `monthly[${index}]`;
+    fields(row, path, ["id", "month", "note", "allocationMode", "effectiveAllocationMode", "allocationNote", "allocationCreatedAt"],
+      ["income", "expense", "invested", "monthEndAssets", "specRatio", "plannedInvested", "reserve", "savingRate"]);
+    if (typeof row.allocationPlan !== "undefined") {
+      if (!Array.isArray(row.allocationPlan)) fail(`${path}.allocationPlan`);
+      row.allocationPlan.forEach((plan, planIndex) => fields(plan, `${path}.allocationPlan[${planIndex}]`,
+        ["assetId", "name", "layer", "reason", "bufferTo"],
+        ["target", "normalizedTarget", "amount", "bufferRedirected", "bufferUnavailable", "bufferIncoming"], ["skipped"]));
+    }
+    if (typeof row.allocationSummary !== "undefined") fields(row.allocationSummary, `${path}.allocationSummary`, [],
+      ["cashflowAvailable", "targetSaving", "investBase", "allocatedTotal", "actualRemainingCash", "remainingCash", "bufferedAllocTotal", "unbufferedCash", "speculativeRatio"], ["speculativePaused"]);
+  });
+  input.entries.forEach((row, index) => fields(row, `entries[${index}]`,
+    ["id", "kind", "date", "target", "channel", "note", "linkedAssetId", "linkedMonth"], ["amount", "linkedAmount"]));
+  if (typeof input.settings !== "undefined") fields(input.settings, "settings", [], ["emergencyGoal"], ["linkInvestEntry"]);
+}
+
 function normalizeData(input) {
   const fallback = structuredClone(defaultData);
   const source = input && typeof input === "object" ? input : {};
@@ -134,6 +178,7 @@ function normalizeData(input) {
   assets.forEach((a) => {
     if (a && typeof a === "object") {
       if (!a.id) a.id = crypto.randomUUID();
+      if (typeof a.element === "undefined") a.element = "";
       if (typeof a.status === "undefined") a.status = "available";
       if (a.id === "speculative-stock" && isBufferedStatus(a.status)) {
         a.status = "paused:manual";
@@ -153,7 +198,7 @@ function normalizeData(input) {
     monthly: Array.isArray(source.monthly) ? source.monthly : fallback.monthly,
     entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
     settings: {
-      emergencyGoal: oldEmergencyGoal && oldEmergencyGoal !== 20000 ? oldEmergencyGoal : fallback.settings.emergencyGoal,
+      emergencyGoal: oldEmergencyGoal > 0 ? oldEmergencyGoal : fallback.settings.emergencyGoal,
       linkInvestEntry: typeof srcSettings.linkInvestEntry === "boolean" ? srcSettings.linkInvestEntry : true,
     },
   };
@@ -248,6 +293,7 @@ function persistLocal() {
 }
 
 function saveData(options = {}) {
+  dataRevision += 1;
   if (options.touch !== false) {
     meta.updatedAt = new Date().toISOString();
   }
@@ -288,9 +334,12 @@ async function syncToCloud() {
     return;
   }
   syncInFlight = true;
+  const syncCodeAtStart = window.supabase.getSyncCode();
   window.supabase.setStatus("syncing");
   try {
     const record = await window.supabase.saveData(data, meta.updatedAt || new Date().toISOString());
+    if (window.supabase.getSyncCode() !== syncCodeAtStart) return;
+    validateCloudRecord(record);
     meta.lastSyncedAt = record.updatedAt || meta.updatedAt || new Date().toISOString();
     meta.lastSyncError = "";
     persistMeta();
@@ -300,6 +349,7 @@ async function syncToCloud() {
       window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
     }
   } catch (error) {
+    if (window.supabase.getSyncCode() !== syncCodeAtStart) return;
     meta.lastSyncError = error && error.message ? error.message : String(error);
     persistMeta();
     console.error("云同步保存失败：", error);
@@ -336,6 +386,13 @@ function numberValue(value) {
 function timeValue(value) {
   const time = Date.parse(value || "");
   return Number.isFinite(time) ? time : 0;
+}
+
+function validateCloudRecord(record) {
+  if (!record || typeof record.updatedAt !== "string" || !Number.isFinite(Date.parse(record.updatedAt))) {
+    throw new Error("云端记录缺少有效的更新时间，本机账本已保留。");
+  }
+  validateLedgerData(record.data);
 }
 
 function formatDateTime(value) {
@@ -667,7 +724,7 @@ function renderEntries() {
   }
 
   // 按年月分组
-  const groups = {};
+  const groups = Object.create(null);
   sorted.forEach((item) => {
     const key = String(item.date || "").slice(0, 7).replace("-", "/") || "未知";
     if (!groups[key]) groups[key] = [];
@@ -678,8 +735,6 @@ function renderEntries() {
     const items = groups[monthKey];
     const totalIncome = items.filter(i => i.kind === "收入").reduce((s, i) => s + numberValue(i.amount), 0);
     const totalInvest = items.filter(i => i.kind === "投资").reduce((s, i) => s + numberValue(i.amount), 0);
-    const isOpen = !document.querySelector(`[data-entry-group="${monthKey}"]`)?.classList.contains("closed");
-
     const groupEl = document.createElement("div");
     groupEl.className = "entry-group";
     groupEl.dataset.entryGroup = monthKey;
@@ -2189,24 +2244,57 @@ document.querySelector("#copySyncCodeBtn")?.addEventListener("click", async () =
 
 document.querySelector("#applySyncCodeBtn")?.addEventListener("click", async () => {
   const input = document.querySelector("#importSyncCodeText");
+  const help = document.querySelector("#syncHelp");
+  if (syncSwitchInFlight || syncInFlight || syncPending) {
+    help.textContent = "本机正在同步，请等同步完成后再切换同步码。";
+    return;
+  }
   const code = input.value.trim();
   if (!code) {
     document.querySelector("#syncHelp").textContent = "请先粘贴同步码。";
     return;
   }
-  if (!confirm("导入同步码后，本设备会连接到同一份云端数据。继续吗？")) return;
+  if (!confirm("会先读取并校验该同步码对应的云端账本，成功后替换本设备账本。建议先导出本机 JSON 备份。继续吗？")) return;
+  const revisionAtStart = dataRevision;
+  const dataAtStart = data;
+  const syncCodeAtStart = window.supabase.getSyncCode();
+  syncSwitchInFlight = true;
+  document.querySelector("#applySyncCodeBtn").disabled = true;
+  document.querySelector("#resetSyncCodeBtn").disabled = true;
+  help.textContent = "正在校验云端账本…";
   try {
-    window.supabase.applySyncCode(code);
+    const record = await window.supabase.loadRecordForSyncCode(code);
+    if (!record) throw new Error("该同步码尚无云端账本，请先在原设备完成同步。本机账本和同步码已保留。");
+    validateCloudRecord(record);
+    const nextData = normalizeData(record.data);
+    if (dataRevision !== revisionAtStart || data !== dataAtStart || syncInFlight || syncPending || window.supabase.getSyncCode() !== syncCodeAtStart) {
+      throw new Error("校验期间本机有改动或同步状态变化，请等同步完成后重试。本机账本和同步码已保留。");
+    }
+    fillMissingMonths(nextData);
+    const nextMeta = { ...meta, updatedAt: record.updatedAt, lastSyncedAt: record.updatedAt, lastSyncError: "" };
+    window.supabase.applySyncCode(code, [[STORAGE_KEY, JSON.stringify(nextData)], [META_KEY, JSON.stringify(nextMeta)]]);
+    data = nextData;
+    meta = nextMeta;
+    dataRevision += 1;
+    render();
     input.value = "";
     refreshSyncDialog();
-    await initCloudSync({ preferCloud: true });
-    document.querySelector("#syncHelp").textContent = "同步码已导入，本设备已切换到同一份云端数据。";
+    window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
+    help.textContent = "同步码已导入，本设备已切换到已校验的云端账本。";
   } catch (error) {
-    document.querySelector("#syncHelp").textContent = `导入失败：${error.message}`;
+    help.textContent = `导入失败：${error.message}`;
+  } finally {
+    syncSwitchInFlight = false;
+    document.querySelector("#applySyncCodeBtn").disabled = false;
+    document.querySelector("#resetSyncCodeBtn").disabled = false;
   }
 });
 
 document.querySelector("#resetSyncCodeBtn")?.addEventListener("click", async () => {
+  if (syncSwitchInFlight || syncInFlight || syncPending) {
+    document.querySelector("#syncHelp").textContent = "本机正在同步，请等同步完成后再生成新的同步码。";
+    return;
+  }
   if (!confirm("确定要生成新的同步身份吗？\n\n这会创建一套新的云端账本钥匙，旧设备不会自动跟随，新旧数据也不会自动合并。建议先导出当前 JSON 备份，再继续。")) return;
   window.supabase.resetIdentity();
   meta.lastSyncedAt = null;
@@ -2439,10 +2527,10 @@ document.querySelector("#importInput").addEventListener("change", async (event) 
   const file = event.target.files?.[0];
   if (!file) return;
   try {
-    if (!confirm("导入会覆盖当前本地账本。建议先导出当前数据作为 JSON 备份。确定导入吗？")) return;
     const text = await file.text();
     const parsed = JSON.parse(text);
-    if (!parsed.assets || !parsed.monthly || !parsed.entries) throw new Error("格式不正确");
+    validateLedgerData(parsed);
+    if (!confirm("导入会覆盖当前本地账本。建议先导出当前数据作为 JSON 备份。确定导入吗？")) return;
     data = normalizeData(parsed);
     saveData();
     render();
@@ -2464,15 +2552,27 @@ async function initCloudSync(options = {}) {
     return;
   }
 
+  if (syncSwitchInFlight || syncInFlight || syncPending) return;
+
+  const syncCodeAtStart = window.supabase.getSyncCode();
   window.supabase.setStatus("syncing");
   try {
+    const revisionAtStart = dataRevision;
+    const dataAtStart = data;
     const record = await window.supabase.loadRecord();
+    if (syncSwitchInFlight || window.supabase.getSyncCode() !== syncCodeAtStart) return;
+    if (dataRevision !== revisionAtStart || data !== dataAtStart) {
+      window.supabase.setStatus("online", "已保留读取云端期间的本地改动，等待本地同步完成");
+      return;
+    }
+    if (record) validateCloudRecord(record);
     const localTime = timeValue(meta.updatedAt);
     const cloudTime = timeValue(record && record.updatedAt);
     const localHasData = hasMeaningfulData(data);
 
     if (record && record.data) {
       if (options.preferCloud || !localHasData || cloudTime >= localTime) {
+        validateLedgerData(record.data);
         data = normalizeData(record.data);
         fillMissingMonths();
         meta.updatedAt = record.updatedAt || meta.updatedAt || new Date().toISOString();
@@ -2499,12 +2599,13 @@ async function initCloudSync(options = {}) {
       }
     }
   } catch (error) {
+    if (syncSwitchInFlight || window.supabase.getSyncCode() !== syncCodeAtStart) return;
     meta.lastSyncError = error && error.message ? error.message : String(error);
     persistMeta();
     console.error("云同步初始化失败：", error);
     window.supabase.setStatus("error", meta.lastSyncError);
   } finally {
-    refreshSyncDialog();
+    if (!syncSwitchInFlight && window.supabase.getSyncCode() === syncCodeAtStart) refreshSyncDialog();
   }
 }
 
@@ -2512,14 +2613,20 @@ async function initCloudSync(options = {}) {
 // 用于切回页面/网络恢复后把其它设备的改动同步过来，不打扰当前编辑。
 async function pullFromCloudIfNewer() {
   if (!window.supabase || !window.supabase.isConfigured()) return;
-  if (syncInFlight || syncPending) return; // 本地有待发改动，优先保本地，等下次再拉
+  if (syncSwitchInFlight || syncInFlight || syncPending) return; // Local edits or an identity switch take priority.
   if (document.querySelector("dialog[open]")) return; // 用户正在编辑/看同步码，别换掉底层数据
+  const syncCodeAtStart = window.supabase.getSyncCode();
   try {
+    const revisionAtStart = dataRevision;
+    const dataAtStart = data;
     const record = await window.supabase.loadRecord();
-    if (!record || !record.data) return;
+    if (dataRevision !== revisionAtStart || data !== dataAtStart || syncSwitchInFlight || syncInFlight || syncPending || document.querySelector("dialog[open]") || window.supabase.getSyncCode() !== syncCodeAtStart) return;
+    if (!record) return;
+    validateCloudRecord(record);
     const cloudTime = timeValue(record.updatedAt);
     const localTime = timeValue(meta.updatedAt);
     if (cloudTime <= localTime) return; // 云端不比本地新，无需覆盖
+    validateLedgerData(record.data);
     data = normalizeData(record.data);
     fillMissingMonths();
     meta.updatedAt = record.updatedAt;

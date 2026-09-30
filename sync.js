@@ -54,9 +54,27 @@
     return identity;
   }
 
-  function saveIdentity(identity) {
-    localStorage.setItem(IDENTITY_KEY, JSON.stringify(identity));
-    localStorage.setItem(LEGACY_USER_ID_KEY, identity.userId);
+  function saveIdentity(identity, localRecords = []) {
+    const updates = [...localRecords, [IDENTITY_KEY, JSON.stringify(identity)], [LEGACY_USER_ID_KEY, identity.userId]];
+    const previous = updates.map(([key]) => [key, localStorage.getItem(key)]);
+    let written = 0;
+    try {
+      updates.forEach(([key, value]) => {
+        localStorage.setItem(key, value);
+        written += 1;
+      });
+    } catch (error) {
+      try {
+        for (let index = written - 1; index >= 0; index -= 1) {
+          const [key, value] = previous[index];
+          if (value === null) localStorage.removeItem(key);
+          else localStorage.setItem(key, value);
+        }
+      } catch {
+        throw new Error("本机存储写入失败且回退未完成，请保留当前页面并导出 JSON 备份后再处理。");
+      }
+      throw new Error("本机存储写入失败，已保留原账本和同步码。请导出 JSON 备份后检查浏览器存储。");
+    }
   }
 
   function encodeSyncCode(identity) {
@@ -123,14 +141,18 @@
     return res.json();
   }
 
-  async function loadRecord() {
-    const identity = getIdentity();
+  async function loadRecordForIdentity(identity) {
     const result = await workerFetch("/load", {
       userId: identity.userId,
       secret: identity.secret,
     });
+    if (!result || typeof result.found !== "boolean") throw new Error("云端记录格式不正确，本机账本已保留。");
     if (!result.found) return null;
     return { data: result.data, updatedAt: result.updatedAt, protected: true };
+  }
+
+  async function loadRecord() {
+    return loadRecordForIdentity(getIdentity());
   }
 
   async function saveRecord(data, updatedAt) {
@@ -166,10 +188,14 @@
       return encodeSyncCode(getIdentity());
     },
 
-    applySyncCode(code) {
+    applySyncCode(code, localRecords = []) {
       const identity = parseSyncCode(code);
-      saveIdentity(identity);
+      saveIdentity(identity, localRecords);
       return identity;
+    },
+
+    async loadRecordForSyncCode(code) {
+      return loadRecordForIdentity(parseSyncCode(code));
     },
 
     resetIdentity() {
