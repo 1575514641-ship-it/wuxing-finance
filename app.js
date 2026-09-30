@@ -75,14 +75,24 @@ function makeDefaultMonths() {
   return months;
 }
 
-let data = normalizeData(loadData());
-let meta = loadMeta();
-let editing = null;
+let storageBlocked = false;
+let storageErrorMessage = "";
+let hasInitialStoredData = false;
+let hasExportableLedger = false;
+let appInitialized = false;
 let syncTimer = null;
 let syncInFlight = false;
 let syncPending = false;
+let syncQueuedPayload = null;
 let dataRevision = 0;
 let syncSwitchInFlight = false;
+let editing = null;
+
+let data = normalizeData(loadData());
+let meta = loadMeta();
+let committedData = structuredClone(data);
+let committedMeta = structuredClone(meta);
+let hasCommittedSnapshot = hasInitialStoredData;
 
 function fillMissingMonths(source = data) {
   if (!Array.isArray(source.monthly)) source.monthly = [];
@@ -118,13 +128,25 @@ function fillMissingMonths(source = data) {
   }
 }
 fillMissingMonths();
+appInitialized = true;
 
 function loadData() {
+  let raw;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return structuredClone(defaultData);
-    return JSON.parse(raw);
-  } catch {
+    raw = localStorage.getItem(STORAGE_KEY);
+  } catch (error) {
+    blockStorage("本机账本无法读取，当前页面已锁定保存、同步和导出。请检查浏览器存储权限后刷新。", error);
+    return structuredClone(defaultData);
+  }
+  if (raw === null) return structuredClone(defaultData);
+  try {
+    const parsed = JSON.parse(raw);
+    validateLedgerData(parsed);
+    hasInitialStoredData = true;
+    hasExportableLedger = true;
+    return parsed;
+  } catch (error) {
+    blockStorage("本机账本格式无法读取，当前页面已锁定保存、同步和导出。请保留页面并检查浏览器存储。", error);
     return structuredClone(defaultData);
   }
 }
@@ -270,98 +292,297 @@ function computeEffectiveTargets(assets) {
 }
 
 function loadMeta() {
+  let raw;
   try {
-    const raw = localStorage.getItem(META_KEY);
-    const saved = raw ? JSON.parse(raw) : {};
+    raw = localStorage.getItem(META_KEY);
+  } catch (error) {
+    blockStorage("本机账本状态无法读取，编辑和同步已暂停。请检查浏览器存储权限后刷新。", error);
+    return { updatedAt: null, lastSyncedAt: null, lastSyncError: "" };
+  }
+  if (raw === null) return { updatedAt: null, lastSyncedAt: null, lastSyncError: "" };
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) throw new Error("本机账本状态格式无效");
+    ["updatedAt", "lastSyncedAt"].forEach((key) => {
+      if (typeof saved[key] !== "undefined" && saved[key] !== null && typeof saved[key] !== "string") throw new Error("本机账本状态格式无效");
+    });
+    if (typeof saved.lastSyncError !== "undefined" && typeof saved.lastSyncError !== "string") throw new Error("本机账本状态格式无效");
     return {
       updatedAt: saved.updatedAt || null,
       lastSyncedAt: saved.lastSyncedAt || null,
       lastSyncError: saved.lastSyncError || "",
     };
-  } catch {
+  } catch (error) {
+    blockStorage("本机账本状态格式无法读取，编辑和同步已暂停。请保留页面并检查浏览器存储。", error);
     return { updatedAt: null, lastSyncedAt: null, lastSyncError: "" };
   }
 }
 
-function persistMeta() {
-  localStorage.setItem(META_KEY, JSON.stringify(meta));
+function showStorageNotice(message, blocked = false) {
+  const status = document.querySelector("#syncStatus");
+  if (status) {
+    status.className = "sync-badge error";
+    status.textContent = blocked ? "本机存储已锁定" : "本机保存失败";
+    status.title = message;
+  }
+  const exportBtn = document.querySelector("#exportBtn");
+  if (exportBtn) exportBtn.disabled = storageBlocked && !hasExportableLedger;
+  const importInput = document.querySelector("#importInput");
+  if (importInput && blocked) importInput.disabled = true;
 }
 
-function persistLocal() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  persistMeta();
+function cancelQueuedSync() {
+  clearTimeout(syncTimer);
+  syncTimer = null;
+  syncPending = false;
+  syncQueuedPayload = null;
+}
+
+function blockStorage(message, error) {
+  storageBlocked = true;
+  storageErrorMessage = message;
+  cancelQueuedSync();
+  showStorageNotice(message, true);
+  if (appInitialized) render();
+  if (error) console.error("本机存储不可用：", error);
+}
+
+function showStorageWriteFailure(error) {
+  const rollbackFailed = Boolean(error && error.rollbackFailed);
+  const readFailed = Boolean(error && error.storageReadFailed);
+  const message = rollbackFailed
+    ? "本机存储状态不确定，账本已锁定。请勿继续编辑，并先检查浏览器存储。"
+    : readFailed
+      ? "无法确认本机账本状态，账本已锁定。请检查浏览器存储权限后刷新。"
+      : "本机保存失败，本次改动已撤销。请检查浏览器存储空间后重试。";
+  if (rollbackFailed || readFailed) blockStorage(message, error);
+  else {
+    storageErrorMessage = message;
+    showStorageNotice(message, false);
+    toast(message);
+  }
+  return message;
+}
+
+function persistMeta(nextMeta = meta) {
+  if (storageBlocked) return false;
+  const snapshot = structuredClone(nextMeta);
+  try {
+    localStorage.setItem(META_KEY, JSON.stringify(snapshot));
+    meta = snapshot;
+    committedMeta = structuredClone(snapshot);
+    return true;
+  } catch (error) {
+    meta = structuredClone(committedMeta);
+    showStorageWriteFailure(error);
+    return false;
+  }
+}
+
+function persistLocal(nextData, nextMeta) {
+  if (storageBlocked) throw new Error(storageErrorMessage || "本机存储已锁定");
+  const dataValue = JSON.stringify(nextData);
+  const metaValue = JSON.stringify(nextMeta);
+  let previousData;
+  let previousMeta;
+  try {
+    previousData = localStorage.getItem(STORAGE_KEY);
+    previousMeta = localStorage.getItem(META_KEY);
+  } catch (error) {
+    const failure = new Error("本机账本状态读取失败。");
+    failure.cause = error;
+    failure.storageReadFailed = true;
+    throw failure;
+  }
+
+  const written = [];
+  try {
+    localStorage.setItem(STORAGE_KEY, dataValue);
+    written.push([STORAGE_KEY, previousData]);
+    localStorage.setItem(META_KEY, metaValue);
+    written.push([META_KEY, previousMeta]);
+    return true;
+  } catch (error) {
+    // Compensate runtime write failures; this cannot guarantee crash or power-loss atomicity.
+    let rollbackError = null;
+    for (let index = written.length - 1; index >= 0; index -= 1) {
+      const [key, previous] = written[index];
+      try {
+        if (previous === null) localStorage.removeItem(key);
+        else localStorage.setItem(key, previous);
+      } catch (restoreError) {
+        rollbackError = restoreError;
+        break;
+      }
+    }
+    const failure = new Error(rollbackError
+      ? "本机保存失败且回退未完成。"
+      : "本机保存失败，原账本和状态已保留。");
+    failure.cause = error;
+    failure.rollbackFailed = Boolean(rollbackError);
+    if (rollbackError) failure.rollbackCause = rollbackError;
+    throw failure;
+  }
+}
+
+function restoreCommittedState() {
+  data = structuredClone(committedData);
+  meta = structuredClone(committedMeta);
+}
+
+function isCloudConfiguredSafely() {
+  if (storageBlocked || !window.supabase) return false;
+  try {
+    return Boolean(window.supabase.isConfigured());
+  } catch (error) {
+    blockStorage("本机同步状态无法读取，自动同步已停止。请检查浏览器存储权限后刷新。", error);
+    return false;
+  }
+}
+
+function getSyncCodeSafely() {
+  if (storageBlocked || !window.supabase) return null;
+  try {
+    return window.supabase.getSyncCode();
+  } catch (error) {
+    blockStorage("本机同步身份无法读取，自动同步已停止。请检查浏览器存储权限后刷新。", error);
+    return null;
+  }
+}
+
+function makeSyncPayload() {
+  if (!hasCommittedSnapshot) return null;
+  return { data: structuredClone(committedData), updatedAt: committedMeta.updatedAt || new Date().toISOString() };
+}
+
+function cloneSyncPayload(payload) {
+  return payload && payload.data
+    ? { data: structuredClone(payload.data), updatedAt: payload.updatedAt }
+    : null;
+}
+
+function scheduleCloudSave(payload) {
+  if (!payload || storageBlocked || !isCloudConfiguredSafely()) return;
+  clearTimeout(syncTimer);
+  syncQueuedPayload = cloneSyncPayload(payload);
+  syncPending = true;
+  syncTimer = setTimeout(flushPendingSync, 450);
+}
+
+function flushPendingSync() {
+  if (storageBlocked || !syncPending || !syncQueuedPayload) return false;
+  clearTimeout(syncTimer);
+  syncTimer = null;
+  const payload = syncQueuedPayload;
+  syncQueuedPayload = null;
+  syncPending = false;
+  if (syncInFlight) {
+    syncQueuedPayload = payload;
+    syncPending = true;
+    return false;
+  }
+  void syncToCloud(payload);
+  return true;
 }
 
 function saveData(options = {}) {
+  if (storageBlocked) {
+    restoreCommittedState();
+    showStorageNotice(storageErrorMessage || "本机存储已锁定，当前操作未保存。", true);
+    return false;
+  }
+  const nextData = structuredClone(typeof options.data === "undefined" ? data : options.data);
+  const nextMeta = structuredClone(typeof options.meta === "undefined" ? meta : options.meta);
+  if (options.touch !== false) nextMeta.updatedAt = new Date().toISOString();
+  try {
+    persistLocal(nextData, nextMeta);
+  } catch (error) {
+    restoreCommittedState();
+    showStorageWriteFailure(error);
+    render();
+    return false;
+  }
+  data = nextData;
+  meta = nextMeta;
+  committedData = structuredClone(nextData);
+  committedMeta = structuredClone(nextMeta);
+  hasCommittedSnapshot = true;
+  hasExportableLedger = true;
   dataRevision += 1;
-  if (options.touch !== false) {
-    meta.updatedAt = new Date().toISOString();
+  storageErrorMessage = "";
+  const status = document.querySelector("#syncStatus");
+  if (status && status.textContent === "本机保存失败") {
+    status.className = "sync-badge";
+    status.textContent = "本地已保存";
+    status.title = "当前账本已成功保存到本机。";
   }
-  persistLocal();
-  if (window.supabase && window.supabase.isConfigured()) {
-    if (options.sync === true) {
-      clearTimeout(syncTimer);
-      syncPending = false;
-      syncToCloud();
-    } else {
-      scheduleCloudSave();
-    }
+  const payload = makeSyncPayload();
+  if (options.sync === true) {
+    cancelQueuedSync();
+    void syncToCloud(payload);
+  } else if (options.sync !== false) {
+    scheduleCloudSave(payload);
   }
+  return true;
 }
 
-function scheduleCloudSave() {
-  if (!window.supabase || !window.supabase.isConfigured()) return;
-  clearTimeout(syncTimer);
-  syncPending = true;
-  syncTimer = setTimeout(() => {
-    syncPending = false;
-    syncToCloud();
-  }, 450);
-}
-
-// 立即触发尚未发出的防抖同步（页面切走/关闭前调用，避免丢失最后一次保存）
-function flushPendingSync() {
-  if (!syncPending) return;
-  clearTimeout(syncTimer);
-  syncPending = false;
-  syncToCloud();
-}
-
-async function syncToCloud() {
-  if (!window.supabase || !window.supabase.isConfigured()) return;
+async function syncToCloud(payload = null) {
+  if (storageBlocked || !isCloudConfiguredSafely()) return false;
+  const snapshot = payload || syncQueuedPayload || makeSyncPayload();
+  if (!snapshot) return false;
   if (syncInFlight) {
+    syncQueuedPayload = cloneSyncPayload(snapshot);
     syncPending = true;
-    return;
+    return false;
   }
   syncInFlight = true;
-  const syncCodeAtStart = window.supabase.getSyncCode();
-  window.supabase.setStatus("syncing");
+  let syncCodeAtStart = null;
   try {
-    const record = await window.supabase.saveData(data, meta.updatedAt || new Date().toISOString());
-    if (window.supabase.getSyncCode() !== syncCodeAtStart) return;
+    syncCodeAtStart = getSyncCodeSafely();
+    if (!syncCodeAtStart) return false;
+    window.supabase.setStatus("syncing");
+    const record = await window.supabase.saveData(structuredClone(snapshot.data), snapshot.updatedAt);
+    if (storageBlocked || getSyncCodeSafely() !== syncCodeAtStart) return false;
     validateCloudRecord(record);
-    meta.lastSyncedAt = record.updatedAt || meta.updatedAt || new Date().toISOString();
-    meta.lastSyncError = "";
-    persistMeta();
+    const nextMeta = structuredClone(meta);
+    nextMeta.lastSyncedAt = record.updatedAt || snapshot.updatedAt || new Date().toISOString();
+    nextMeta.lastSyncError = "";
+    if (!persistMeta(nextMeta)) {
+      if (!storageBlocked) window.supabase.setStatus("error", "云端已保存，但本机同步状态未保存。");
+      return false;
+    }
     if (record.legacy) {
       window.supabase.setStatus("legacy", "检测到旧版同步记录；建议导出备份后重新生成同步码迁移到当前云同步。");
     } else {
       window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
     }
+    return true;
   } catch (error) {
-    if (window.supabase.getSyncCode() !== syncCodeAtStart) return;
-    meta.lastSyncError = error && error.message ? error.message : String(error);
-    persistMeta();
+    if (syncCodeAtStart && !storageBlocked && getSyncCodeSafely() !== syncCodeAtStart) return false;
+    const nextMeta = structuredClone(meta);
+    nextMeta.lastSyncError = error && error.message ? error.message : String(error);
+    persistMeta(nextMeta);
     console.error("云同步保存失败：", error);
-    window.supabase.setStatus("error", meta.lastSyncError);
+    window.supabase.setStatus("error", nextMeta.lastSyncError);
+    return false;
   } finally {
     syncInFlight = false;
-    if (syncPending) {
-      clearTimeout(syncTimer);
-      syncPending = false;
-      syncToCloud();
-    }
+    if (syncPending && !storageBlocked) flushPendingSync();
   }
+}
+
+function commitRemoteData(nextData, nextMeta) {
+  return saveData({ data: nextData, meta: nextMeta, touch: false, sync: false });
+}
+
+function commitSyncCodeData(nextData, nextMeta) {
+  data = structuredClone(nextData);
+  meta = structuredClone(nextMeta);
+  committedData = structuredClone(nextData);
+  committedMeta = structuredClone(nextMeta);
+  hasCommittedSnapshot = true;
+  hasExportableLedger = true;
+  dataRevision += 1;
 }
 
 function money(value) {
@@ -451,6 +672,21 @@ function layerClass(element) {
 }
 
 function render() {
+  if (storageBlocked) {
+    const main = document.querySelector("main");
+    if (main) {
+      main.innerHTML = '<div style="padding:40px;text-align:center;color:#b91c1c">' +
+        '<h2>本机存储需要检查</h2>' +
+        '<p>' + esc(storageErrorMessage || "本机存储已锁定，编辑和同步已停止。") + '</p>' +
+        '<p style="color:#6b7280;margin-top:12px">' +
+        (hasExportableLedger
+          ? "可以点右上角「导出」，保存已成功读取或保存的账本快照。"
+          : "账本尚未成功读取，无法导出有效备份。可从另一台有完整账本的设备导出备份。") +
+        '请检查浏览器存储权限后刷新。不要清理网站数据，以免丢失本机账本。</p>' +
+        '</div>';
+    }
+    return;
+  }
   try {
     renderDashboard();
     renderTodayActions();
@@ -663,8 +899,7 @@ function renderEmergencyBar() {
       if (!isNaN(val) && val > 0) {
         if (!data.settings) data.settings = {};
         data.settings.emergencyGoal = Math.round(val);
-        saveData();
-        renderEmergencyBar();
+        if (saveData()) renderEmergencyBar();
       }
     };
   }
@@ -1800,7 +2035,7 @@ function saveAllocation() {
     data.monthly.push(record);
   }
 
-  saveData();
+  if (!saveData()) return false;
   allocState.dirty = false;
   var amount = result.allocatedTotal;
   var msgEl = document.querySelector("#allocSaveMsg");
@@ -1871,7 +2106,7 @@ document.addEventListener("DOMContentLoaded", function () {
     linkToggle.addEventListener("change", function () {
       if (!data.settings) data.settings = {};
       data.settings.linkInvestEntry = linkToggle.checked;
-      saveData();
+      if (!saveData()) render();
     });
   }
 });
@@ -1993,7 +2228,8 @@ function openMonthEditor(id) {
 
 function openEntryEditor(id) {
   const isNew = !id;
-  const lastKind = localStorage.getItem(LAST_KIND_KEY) || "投资";
+  let lastKind = "投资";
+  try { lastKind = localStorage.getItem(LAST_KIND_KEY) || lastKind; } catch { /* Optional preference only. */ }
   const item = isNew
     ? { id: crypto.randomUUID(), date: today(), kind: lastKind, amount: 0, target: "", channel: "", note: "" }
     : data.entries.find((x) => x.id === id);
@@ -2019,7 +2255,8 @@ function openEntryEditor(id) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function currentMonth() {
@@ -2146,9 +2383,9 @@ document.querySelector("#addEntryBtn").addEventListener("click", () => openEntry
 document.querySelector("#updateMarketBtn")?.addEventListener("click", () => openMarketValueEditor());
 document.querySelector("#marketValueForm")?.addEventListener("submit", (event) => {
   if (event.submitter && event.submitter.value === "save") {
-    saveMarketValues();
+    event.preventDefault();
+    if (saveMarketValues()) document.querySelector("#marketValueDialog")?.close();
   }
-  // <form method="dialog"> 会自动关闭弹窗；save/cancel 都关
 });
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
@@ -2194,7 +2431,7 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   });
   data.assets = nextAssets;
   syncBufferDestinations(data.assets);
-  saveData();
+  if (!saveData()) return;
   render();
   alert("新配置已套用。建议去「资产」Tab 检查每项的层级、目标占比和状态，确认无误后开始按新比例补仓。");
 });
@@ -2209,7 +2446,7 @@ document.querySelector("#unlockBufferedBtn")?.addEventListener("click", () => {
     asset.bufferDestination = "";
     count += 1;
   });
-  saveData();
+  if (!saveData()) return;
   render();
   alert("已解锁 " + count + " 个暂存资产。后续分配会按可买资产正常计算。");
 });
@@ -2218,7 +2455,18 @@ function refreshSyncDialog() {
   const codeEl = document.querySelector("#syncCodeText");
   const helpEl = document.querySelector("#syncHelp");
   if (!codeEl || !window.supabase) return;
-  codeEl.value = window.supabase.getSyncCode();
+  if (storageBlocked) {
+    codeEl.value = "";
+    if (helpEl) helpEl.textContent = storageErrorMessage;
+    return;
+  }
+  const code = getSyncCodeSafely();
+  if (!code) {
+    codeEl.value = "";
+    if (helpEl) helpEl.textContent = storageErrorMessage || "本机同步身份无法读取。";
+    return;
+  }
+  codeEl.value = code;
   if (helpEl) {
     helpEl.textContent = meta.lastSyncError
       ? `最近同步错误：${meta.lastSyncError}`
@@ -2245,6 +2493,10 @@ document.querySelector("#copySyncCodeBtn")?.addEventListener("click", async () =
 document.querySelector("#applySyncCodeBtn")?.addEventListener("click", async () => {
   const input = document.querySelector("#importSyncCodeText");
   const help = document.querySelector("#syncHelp");
+  if (storageBlocked) {
+    help.textContent = storageErrorMessage;
+    return;
+  }
   if (syncSwitchInFlight || syncInFlight || syncPending) {
     help.textContent = "本机正在同步，请等同步完成后再切换同步码。";
     return;
@@ -2257,7 +2509,11 @@ document.querySelector("#applySyncCodeBtn")?.addEventListener("click", async () 
   if (!confirm("会先读取并校验该同步码对应的云端账本，成功后替换本设备账本。建议先导出本机 JSON 备份。继续吗？")) return;
   const revisionAtStart = dataRevision;
   const dataAtStart = data;
-  const syncCodeAtStart = window.supabase.getSyncCode();
+  const syncCodeAtStart = getSyncCodeSafely();
+  if (!syncCodeAtStart) {
+    help.textContent = storageErrorMessage || "本机同步身份无法读取。";
+    return;
+  }
   syncSwitchInFlight = true;
   document.querySelector("#applySyncCodeBtn").disabled = true;
   document.querySelector("#resetSyncCodeBtn").disabled = true;
@@ -2267,21 +2523,23 @@ document.querySelector("#applySyncCodeBtn")?.addEventListener("click", async () 
     if (!record) throw new Error("该同步码尚无云端账本，请先在原设备完成同步。本机账本和同步码已保留。");
     validateCloudRecord(record);
     const nextData = normalizeData(record.data);
-    if (dataRevision !== revisionAtStart || data !== dataAtStart || syncInFlight || syncPending || window.supabase.getSyncCode() !== syncCodeAtStart) {
+    if (dataRevision !== revisionAtStart || data !== dataAtStart || syncInFlight || syncPending || getSyncCodeSafely() !== syncCodeAtStart) {
       throw new Error("校验期间本机有改动或同步状态变化，请等同步完成后重试。本机账本和同步码已保留。");
     }
     fillMissingMonths(nextData);
     const nextMeta = { ...meta, updatedAt: record.updatedAt, lastSyncedAt: record.updatedAt, lastSyncError: "" };
     window.supabase.applySyncCode(code, [[STORAGE_KEY, JSON.stringify(nextData)], [META_KEY, JSON.stringify(nextMeta)]]);
-    data = nextData;
-    meta = nextMeta;
-    dataRevision += 1;
+    cancelQueuedSync();
+    commitSyncCodeData(nextData, nextMeta);
     render();
     input.value = "";
     refreshSyncDialog();
     window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
     help.textContent = "同步码已导入，本设备已切换到已校验的云端账本。";
   } catch (error) {
+    if (String(error && error.message || error).includes("回退未完成")) {
+      blockStorage("本机存储回退未完成，账本已锁定。请勿继续编辑，并先检查浏览器存储。", error);
+    }
     help.textContent = `导入失败：${error.message}`;
   } finally {
     syncSwitchInFlight = false;
@@ -2291,17 +2549,30 @@ document.querySelector("#applySyncCodeBtn")?.addEventListener("click", async () 
 });
 
 document.querySelector("#resetSyncCodeBtn")?.addEventListener("click", async () => {
+  if (storageBlocked) {
+    document.querySelector("#syncHelp").textContent = storageErrorMessage;
+    return;
+  }
   if (syncSwitchInFlight || syncInFlight || syncPending) {
     document.querySelector("#syncHelp").textContent = "本机正在同步，请等同步完成后再生成新的同步码。";
     return;
   }
   if (!confirm("确定要生成新的同步身份吗？\n\n这会创建一套新的云端账本钥匙，旧设备不会自动跟随，新旧数据也不会自动合并。建议先导出当前 JSON 备份，再继续。")) return;
-  window.supabase.resetIdentity();
-  meta.lastSyncedAt = null;
-  meta.lastSyncError = "";
-  saveData({ touch: true, sync: true });
-  refreshSyncDialog();
-  document.querySelector("#syncHelp").textContent = "已生成新的同步码，并开始把本机数据写入新的云端记录。";
+  const nextData = structuredClone(data);
+  const nextMeta = { ...meta, updatedAt: new Date().toISOString(), lastSyncedAt: null, lastSyncError: "" };
+  try {
+    window.supabase.resetIdentity([[STORAGE_KEY, JSON.stringify(nextData)], [META_KEY, JSON.stringify(nextMeta)]]);
+    cancelQueuedSync();
+    commitSyncCodeData(nextData, nextMeta);
+    refreshSyncDialog();
+    document.querySelector("#syncHelp").textContent = "已生成新同步码并保存本机账本，正在同步云端。";
+    void syncToCloud(makeSyncPayload());
+  } catch (error) {
+    if (String(error && error.message || error).includes("回退未完成")) {
+      blockStorage("本机存储回退未完成，账本已锁定。请勿继续编辑，并先检查浏览器存储。", error);
+    }
+    document.querySelector("#syncHelp").textContent = `生成失败：${error.message}`;
+  }
 });
 
 // ---- 投资记一笔 → 资产累计投入 / 月度实际投入 自动联动 ----
@@ -2431,9 +2702,10 @@ function saveMarketValues() {
       changed += 1;
     }
   });
-  saveData();
+  if (!saveData()) return false;
   render();
   toast(changed > 0 ? "已更新 " + changed + " 只资产的市值" : "市值无变化");
+  return true;
 }
 
 document.querySelector("#editorForm").addEventListener("submit", (event) => {
@@ -2478,7 +2750,6 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
       linkedAsset = applyEntryLink(updated, preferredAssetId);
       linkedAmount = numberValue(updated.linkedAmount);
     }
-    localStorage.setItem(LAST_KIND_KEY, String(updated.kind || "投资")); // 记住类型作下次默认
   } else {
     if (editing.collection === "monthly") {
       // 投机层占比按当前持仓自动写入；清理只读展示用的下划线字段，避免脏字段被持久化
@@ -2489,7 +2760,10 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
     else collection.push(updated);
   }
   if (editing.collection === "assets") syncBufferDestinations(data.assets);
-  saveData();
+  if (!saveData()) return;
+  if (editing.collection === "entries") {
+    try { localStorage.setItem(LAST_KIND_KEY, String(updated.kind || "投资")); } catch { /* Optional preference only. */ }
+  }
   document.querySelector("#editorDialog").close();
   render();
   // 联动到具体资产时给个轻提示，引导去批量更新市值（不再每笔弹框打断）
@@ -2513,13 +2787,18 @@ document.querySelector("#deleteBtn").addEventListener("click", () => {
     if (original) reverseEntryLink(original);
   }
   data[editing.collection] = data[editing.collection].filter((item) => item.id !== editing.item.id);
-  saveData();
+  if (!saveData()) return;
   document.querySelector("#editorDialog").close();
   render();
 });
 
 document.querySelector("#exportBtn").addEventListener("click", () => {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  if (storageBlocked && !hasExportableLedger) {
+    showStorageNotice(storageErrorMessage, true);
+    return;
+  }
+  const backupData = hasExportableLedger ? committedData : data;
+  const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -2529,6 +2808,11 @@ document.querySelector("#exportBtn").addEventListener("click", () => {
 });
 
 document.querySelector("#importInput").addEventListener("change", async (event) => {
+  if (storageBlocked) {
+    alert(storageErrorMessage || "本机存储已锁定，无法导入账本。");
+    event.target.value = "";
+    return;
+  }
   const file = event.target.files?.[0];
   if (!file) return;
   try {
@@ -2536,8 +2820,12 @@ document.querySelector("#importInput").addEventListener("change", async (event) 
     const parsed = JSON.parse(text);
     validateLedgerData(parsed);
     if (!confirm("导入会覆盖当前本地账本。建议先导出当前数据作为 JSON 备份。确定导入吗？")) return;
-    data = normalizeData(parsed);
-    saveData();
+    const nextData = normalizeData(structuredClone(parsed));
+    fillMissingMonths(nextData);
+    if (!saveData({ data: nextData })) {
+      alert("导入失败：本机保存失败，原账本已保留。");
+      return;
+    }
     render();
   } catch (error) {
     alert(`导入失败：${error.message}`);
@@ -2551,24 +2839,24 @@ if ("serviceWorker" in navigator && location.protocol !== "file:") {
 }
 
 async function initCloudSync(options = {}) {
-  if (!window.supabase) return;
-  if (!window.supabase.isConfigured()) {
-    window.supabase.setStatus("offline");
-    return;
-  }
-
-  if (syncSwitchInFlight || syncInFlight || syncPending) return;
-
-  const syncCodeAtStart = window.supabase.getSyncCode();
-  window.supabase.setStatus("syncing");
+  if (storageBlocked || !window.supabase) return false;
+  let syncCodeAtStart = null;
   try {
+    if (!isCloudConfiguredSafely()) {
+      if (!storageBlocked) window.supabase.setStatus("offline");
+      return false;
+    }
+    if (syncSwitchInFlight || syncInFlight || syncPending) return false;
+    syncCodeAtStart = getSyncCodeSafely();
+    if (!syncCodeAtStart) return false;
+    window.supabase.setStatus("syncing");
     const revisionAtStart = dataRevision;
     const dataAtStart = data;
     const record = await window.supabase.loadRecord();
-    if (syncSwitchInFlight || window.supabase.getSyncCode() !== syncCodeAtStart) return;
+    if (storageBlocked || syncSwitchInFlight || getSyncCodeSafely() !== syncCodeAtStart) return false;
     if (dataRevision !== revisionAtStart || data !== dataAtStart) {
       window.supabase.setStatus("online", "已保留读取云端期间的本地改动，等待本地同步完成");
-      return;
+      return false;
     }
     if (record) validateCloudRecord(record);
     const localTime = timeValue(meta.updatedAt);
@@ -2577,13 +2865,14 @@ async function initCloudSync(options = {}) {
 
     if (record && record.data) {
       if (options.preferCloud || !localHasData || cloudTime >= localTime) {
-        validateLedgerData(record.data);
-        data = normalizeData(record.data);
-        fillMissingMonths();
-        meta.updatedAt = record.updatedAt || meta.updatedAt || new Date().toISOString();
-        meta.lastSyncedAt = record.updatedAt || meta.updatedAt;
-        meta.lastSyncError = "";
-        persistLocal();
+        const nextData = normalizeData(structuredClone(record.data));
+        fillMissingMonths(nextData);
+        const nextUpdatedAt = record.updatedAt || meta.updatedAt || new Date().toISOString();
+        const nextMeta = { ...meta, updatedAt: nextUpdatedAt, lastSyncedAt: record.updatedAt || nextUpdatedAt, lastSyncError: "" };
+        if (!commitRemoteData(nextData, nextMeta)) {
+          if (!storageBlocked) window.supabase.setStatus("error", storageErrorMessage || "云端账本未能保存到本机，原账本已保留。");
+          return false;
+        }
         render();
         if (record.legacy) {
           window.supabase.setStatus("legacy", "检测到旧版同步记录；建议导出备份后重新生成同步码迁移到当前云同步。");
@@ -2591,58 +2880,69 @@ async function initCloudSync(options = {}) {
           window.supabase.setStatus("online", `上次同步：${formatDateTime(meta.lastSyncedAt)}`);
         }
         if (record.protected === false && !record.legacy) {
-          await syncToCloud();
+          await syncToCloud(makeSyncPayload());
         }
       } else {
-        await syncToCloud();
+        await syncToCloud(makeSyncPayload());
       }
     } else {
       if (localHasData) {
-        await syncToCloud();
+        await syncToCloud(makeSyncPayload());
       } else {
         window.supabase.setStatus("online", "云端已连接，编辑后会自动同步");
       }
     }
+    return true;
   } catch (error) {
-    if (syncSwitchInFlight || window.supabase.getSyncCode() !== syncCodeAtStart) return;
-    meta.lastSyncError = error && error.message ? error.message : String(error);
-    persistMeta();
+    if (storageBlocked || syncSwitchInFlight || (syncCodeAtStart && getSyncCodeSafely() !== syncCodeAtStart)) return false;
+    const message = error && error.message ? error.message : String(error);
+    const nextMeta = { ...meta, lastSyncError: message };
+    persistMeta(nextMeta);
     console.error("云同步初始化失败：", error);
-    window.supabase.setStatus("error", meta.lastSyncError);
+    window.supabase.setStatus("error", message);
+    return false;
   } finally {
-    if (!syncSwitchInFlight && window.supabase.getSyncCode() === syncCodeAtStart) refreshSyncDialog();
+    if (!syncSwitchInFlight && !storageBlocked && syncCodeAtStart && getSyncCodeSafely() === syncCodeAtStart) refreshSyncDialog();
   }
 }
 
 // 静默从云端拉取：仅当云端确实更新（updatedAt 更新）且本地无挂起改动时才覆盖，
 // 用于切回页面/网络恢复后把其它设备的改动同步过来，不打扰当前编辑。
 async function pullFromCloudIfNewer() {
-  if (!window.supabase || !window.supabase.isConfigured()) return;
-  if (syncSwitchInFlight || syncInFlight || syncPending) return; // Local edits or an identity switch take priority.
-  if (document.querySelector("dialog[open]")) return; // 用户正在编辑/看同步码，别换掉底层数据
-  const syncCodeAtStart = window.supabase.getSyncCode();
+  if (storageBlocked || !window.supabase) return false;
+  let syncCodeAtStart = null;
   try {
+    if (!isCloudConfiguredSafely()) return false;
+    if (syncSwitchInFlight || syncInFlight || syncPending) return false; // Local edits or an identity switch take priority.
+    if (document.querySelector("dialog[open]")) return false;
+    syncCodeAtStart = getSyncCodeSafely();
+    if (!syncCodeAtStart) return false;
     const revisionAtStart = dataRevision;
     const dataAtStart = data;
     const record = await window.supabase.loadRecord();
-    if (dataRevision !== revisionAtStart || data !== dataAtStart || syncSwitchInFlight || syncInFlight || syncPending || document.querySelector("dialog[open]") || window.supabase.getSyncCode() !== syncCodeAtStart) return;
-    if (!record) return;
+    if (storageBlocked || dataRevision !== revisionAtStart || data !== dataAtStart || syncSwitchInFlight || syncInFlight || syncPending || document.querySelector("dialog[open]") || getSyncCodeSafely() !== syncCodeAtStart) return false;
+    if (!record) return false;
     validateCloudRecord(record);
     const cloudTime = timeValue(record.updatedAt);
     const localTime = timeValue(meta.updatedAt);
-    if (cloudTime <= localTime) return; // 云端不比本地新，无需覆盖
-    validateLedgerData(record.data);
-    data = normalizeData(record.data);
-    fillMissingMonths();
-    meta.updatedAt = record.updatedAt;
-    meta.lastSyncedAt = record.updatedAt;
-    meta.lastSyncError = "";
-    persistLocal();
+    if (cloudTime <= localTime) return false; // 云端不比本地新，无需覆盖
+    const nextData = normalizeData(structuredClone(record.data));
+    fillMissingMonths(nextData);
+    const nextMeta = { ...meta, updatedAt: record.updatedAt, lastSyncedAt: record.updatedAt, lastSyncError: "" };
+    if (!commitRemoteData(nextData, nextMeta)) {
+      if (!storageBlocked) window.supabase.setStatus("error", storageErrorMessage || "云端账本未能保存到本机，原账本已保留。");
+      return false;
+    }
     render();
     window.supabase.setStatus("online", `已拉取最新：${formatDateTime(meta.lastSyncedAt)}`);
+    return true;
   } catch (error) {
-    // 静默失败：不打断用户，仅记录，等下次可见/网络事件再试
+    if (storageBlocked || (syncCodeAtStart && getSyncCodeSafely() !== syncCodeAtStart)) return false;
+    const message = error && error.message ? error.message : String(error);
+    persistMeta({ ...meta, lastSyncError: message });
     console.warn("后台拉取云端失败：", error);
+    window.supabase.setStatus("error", message);
+    return false;
   }
 }
 

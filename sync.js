@@ -198,14 +198,14 @@
       return loadRecordForIdentity(parseSyncCode(code));
     },
 
-    resetIdentity() {
+    resetIdentity(localRecords = []) {
       const identity = {
         version: 2,
         userId: crypto.randomUUID(),
         secret: randomToken(32),
         createdAt: new Date().toISOString(),
       };
-      saveIdentity(identity);
+      saveIdentity(identity, localRecords);
       return identity;
     },
 
