@@ -2306,7 +2306,7 @@ document.querySelector("#resetSyncCodeBtn")?.addEventListener("click", async () 
 
 // ---- 投资记一笔 → 资产累计投入 / 月度实际投入 自动联动 ----
 // 设计：每条投资 entry 用 linkedAssetId/linkedMonth/linkedAmount 记住"上次联动加了多少、加到哪"。
-// 保存前先冲销旧联动(reverse)，保存后再应用新联动(apply)，确保编辑金额/改去向/删除都不会重复计数。
+// Reverse and reapply links when accounting fields change; metadata-only edits preserve the saved link.
 
 function isLinkEnabled() {
   return !(data.settings && data.settings.linkInvestEntry === false);
@@ -2349,7 +2349,7 @@ function entryLinkFieldsChanged(original, updated) {
 
 // 应用一条投资 entry 的联动：把金额加到匹配资产的累计投入 + 当月实际投入，并在 entry 上记账
 // 返回被联动的资产对象（用于市值快捷提示），无匹配资产返回 null
-function applyEntryLink(entry) {
+function applyEntryLink(entry, preferredAssetId) {
   entry.linkedAssetId = "";
   entry.linkedMonth = "";
   entry.linkedAmount = 0;
@@ -2357,8 +2357,10 @@ function applyEntryLink(entry) {
   if (String(entry.kind) !== "投资") return null;
   var amt = numberValue(entry.amount);
   if (amt <= 0) return null;
-  // 按去向名精确匹配资产；匹配不到则不联动资产（但仍联动月度投入）
-  var asset = data.assets.find(function (a) { return a.name && a.name === String(entry.target).trim(); });
+  // Prefer a remembered asset identity during edits; otherwise match by destination name.
+  var asset = preferredAssetId
+    ? data.assets.find(function (a) { return a.id === preferredAssetId; }) || null
+    : data.assets.find(function (a) { return a.name && a.name === String(entry.target).trim(); }) || null;
   var monthKey = monthKeyFromDate(entry.date);
   var month = data.monthly.find(function (m) { return m.month === monthKey; });
   if (!month) {
@@ -2367,7 +2369,7 @@ function applyEntryLink(entry) {
   }
   month.invested = numberValue(month.invested) + amt;
   if (asset) asset.cost = numberValue(asset.cost) + amt;
-  entry.linkedAssetId = asset ? asset.id : "";
+  entry.linkedAssetId = asset ? asset.id : (preferredAssetId || "");
   entry.linkedMonth = monthKey;
   entry.linkedAmount = amt;
   return asset;
@@ -2457,20 +2459,23 @@ document.querySelector("#editorForm").addEventListener("submit", (event) => {
   if (editing.collection === "entries") {
     var originalEntry = index >= 0 ? collection[index] : null;
     var originalLinkedAmount = numberValue(originalEntry && originalEntry.linkedAmount);
-    if (originalEntry && originalLinkedAmount > 0 && !isLinkEnabled()) {
-      if (entryLinkFieldsChanged(originalEntry, updated)) {
+    var linkFieldsChanged = entryLinkFieldsChanged(originalEntry, updated);
+    if (originalEntry && originalLinkedAmount > 0 && !linkFieldsChanged) {
+      updated.linkedAssetId = originalEntry.linkedAssetId;
+      updated.linkedMonth = originalEntry.linkedMonth;
+      updated.linkedAmount = originalEntry.linkedAmount;
+      collection[index] = updated;
+    } else {
+      if (originalEntry && originalLinkedAmount > 0 && linkFieldsChanged && !isLinkEnabled()) {
         alert("这条投资记录已经联动到资产/月度。关闭自动联动时不能修改日期、类型、金额或去向；请先打开自动联动再修改，或删除后重记。");
         return;
       }
-      updated.linkedAssetId = originalEntry.linkedAssetId || "";
-      updated.linkedMonth = originalEntry.linkedMonth || "";
-      updated.linkedAmount = originalLinkedAmount;
-      collection[index] = updated;
-    } else {
+      var sameDestination = originalEntry && String(originalEntry.target || "").trim() === String(updated.target || "").trim();
+      var preferredAssetId = originalLinkedAmount > 0 && sameDestination ? originalEntry.linkedAssetId : "";
       if (index >= 0) reverseEntryLink(collection[index]); // 冲销 collection 里的原始记录
       if (index >= 0) collection[index] = updated;
       else collection.push(updated);
-      linkedAsset = applyEntryLink(updated);
+      linkedAsset = applyEntryLink(updated, preferredAssetId);
       linkedAmount = numberValue(updated.linkedAmount);
     }
     localStorage.setItem(LAST_KIND_KEY, String(updated.kind || "投资")); // 记住类型作下次默认

@@ -6,7 +6,7 @@
 - 入口：`index.html`，主逻辑：`app.js`，样式：`styles.css`，Service Worker：`sw.js`，云同步封装：`sync.js`（原 supabase.js 已删除）。
 - 线上地址：<https://www0706.netlify.app/>
 - 仓库：`1575514641-ship-it/wuxing-finance`，当前主分支 `main`。
-- 当前前端版本：v7.26（补齐带版本号脚本的离线预缓存；保留 v7.25 账本保护）。Worker 保存修复已准备，因本机 Wrangler 未登录 Cloudflare，尚未部署。
+- 当前前端版本：v7.27（编辑已有投资联动时保留稳定资产关联；保留 v7.26 离线缓存及 v7.25 账本保护）。Worker 保存修复已准备，因本机 Wrangler 未登录 Cloudflare，尚未部署。
 
 ## 运行与验证
 
@@ -44,7 +44,7 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 
 - 这是「工资到账决策器」，不是记账工具。
 - 计划与执行严格分开：分配页保存 `plannedInvested` 和 `allocationPlan`，不能覆盖月度 `invested`，不能写入 `entries`。
-- 随手记记录真实发生的收入、投资、大额消费。v7.13 起「投资」类记一笔是执行端真相源：保存时按去向名匹配资产，自动累加该资产 `cost`(累计投入)和当月 `monthly.invested`(实际投入)；编辑/删除/改类型会先冲销旧联动再应用新的(靠 entry 上的 `linkedAssetId/linkedMonth/linkedAmount`)，不会重复计数。联动可由 `settings.linkInvestEntry`(默认 true)关闭。
+- 随手记记录真实发生的收入、投资、大额消费。v7.13 起「投资」类记一笔是执行端真相源：新记录按去向名匹配资产，自动累加该资产 `cost`(累计投入)和当月 `monthly.invested`(实际投入)。已有联动只改备注或渠道时保留 `linkedAssetId/linkedMonth/linkedAmount`，不冲销重加；改金额或日期且去向未变时保留原资产 ID，避免资产改名后丢失投入。明确改去向才重新按名称匹配；原 ID 已被删除时，不把历史投入迁到同名新资产。记账字段编辑、删除和改类型仍按已存 linked 字段冲销，不改市值或计划投资。联动可由 `settings.linkInvestEntry`(默认 true)关闭。
 - 市值(`asset.value`)是会波动的外部快照，不跟买入事件走：记一笔投资不改市值，只给 toast 轻提示。市值更新走资产页「更新市值」按钮(`openMarketValueEditor`/`saveMarketValues`)——批量列出所有资产、预填当前值、对照券商一次性改完。设计理由：确定的钱(投入)跟事件自动记，波动的钱(市值)跟「每月看一次账户」的仪式批量填。v7.15 起，已删除 v7.13~v7.14 的「记一笔后单只市值预填弹窗」。
 - 注意区分：分配页(计划)绝不碰 `invested/entries`；随手记(执行)才联动 `invested/cost`。两者不可混。
 
