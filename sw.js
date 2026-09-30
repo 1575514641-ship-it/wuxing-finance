@@ -1,5 +1,6 @@
-const CACHE_NAME = "wuxing-finance-app-v7-25";
-const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./sync.js", "./manifest.webmanifest", "./icon.svg"];
+const CACHE_NAME = "wuxing-finance-app-v7-26";
+const SCRIPT_VERSION = CACHE_NAME.slice(CACHE_NAME.lastIndexOf("-v") + 2);
+const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./sync.js", `./app.js?v=${SCRIPT_VERSION}`, `./sync.js?v=${SCRIPT_VERSION}`, "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();

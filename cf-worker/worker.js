@@ -61,32 +61,69 @@ export default {
       if (!body || !body.userId || !body.secret || !body.data) return err("缺少必要字段");
 
       const hash = await sha256(body.secret);
-      const updatedAt = body.updatedAt || new Date().toISOString();
+      const updatedAtInput = body.updatedAt || new Date().toISOString();
+      if (typeof updatedAtInput !== "string") return err("更新时间无效，请检查设备时间后重试");
+      const parsedUpdatedAt = Date.parse(updatedAtInput);
+      if (!Number.isFinite(parsedUpdatedAt)) return err("更新时间无效，请检查设备时间后重试");
+      if (parsedUpdatedAt > Date.now() + 5 * 60 * 1000) {
+        return err("设备时间超前超过 5 分钟，请校准设备时间后重试");
+      }
+      const updatedAt = new Date(parsedUpdatedAt).toISOString();
+      try {
+        validateLedgerData(body.data);
+      } catch {
+        return err("账本格式不正确，未保存");
+      }
       const dataStr = JSON.stringify(body.data);
 
-      // upsert：存在就更新（校验 secret），不存在就插入
-      const existing = await env.DB.prepare(
+      const observed = await env.DB.prepare(
         "SELECT secret_hash, updated_at FROM user_data WHERE user_id = ?"
       )
         .bind(body.userId)
         .first();
-
-      if (existing && existing.secret_hash !== hash) {
+      if (observed && observed.secret_hash !== hash) {
         return err("secret 不匹配，拒绝覆盖", 403);
       }
-      if (existing && timeValue(existing.updated_at) > timeValue(updatedAt)) {
-        return json({ error: "云端数据更新，拒绝用旧快照覆盖", cloudUpdatedAt: existing.updated_at }, 409);
-      }
+      const observedUpdatedAt = observed ? observed.updated_at : null;
+      const observedTime = observed ? timeValue(observed.updated_at) : null;
 
-      await env.DB.prepare(
+      const result = await env.DB.prepare(
         `INSERT INTO user_data (user_id, secret_hash, data, updated_at)
          VALUES (?, ?, ?, ?)
          ON CONFLICT(user_id) DO UPDATE SET
            data = excluded.data,
-           updated_at = excluded.updated_at`
+           updated_at = excluded.updated_at
+         WHERE user_data.secret_hash = excluded.secret_hash
+           AND (
+             (julianday(user_data.updated_at) IS NOT NULL
+               AND julianday(user_data.updated_at) <= julianday(excluded.updated_at))
+             OR (julianday(user_data.updated_at) IS NULL
+               AND user_data.updated_at = ?
+               AND ? <= ?)
+           )`
       )
-        .bind(body.userId, hash, dataStr, updatedAt)
+        .bind(body.userId, hash, dataStr, updatedAt, observedUpdatedAt, observedTime, parsedUpdatedAt)
         .run();
+
+      if (!result || result.success !== true || !result.meta ||
+          !Number.isInteger(result.meta.changes) || result.meta.changes < 0 || result.meta.changes > 1) {
+        return err("云端保存结果无法确认，请重试", 500);
+      }
+      if (result.meta.changes === 0) {
+        const existing = await env.DB.prepare(
+          "SELECT secret_hash, updated_at FROM user_data WHERE user_id = ?"
+        )
+          .bind(body.userId)
+          .first();
+
+        if (existing && existing.secret_hash !== hash) {
+          return err("secret 不匹配，拒绝覆盖", 403);
+        }
+        return json({
+          error: "云端数据更新，拒绝用旧快照覆盖",
+          cloudUpdatedAt: existing ? existing.updated_at : null,
+        }, 409);
+      }
 
       return json({ ok: true, updatedAt });
     }
@@ -100,6 +137,56 @@ async function sha256(text) {
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function validateLedgerData(input) {
+  const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  const fail = () => { throw new Error("invalid ledger"); };
+  const fields = (row, strings = [], numbers = [], booleans = []) => {
+    if (!isRecord(row)) fail();
+    strings.forEach((key) => {
+      if (typeof row[key] !== "undefined" && typeof row[key] !== "string") fail();
+    });
+    numbers.forEach((key) => {
+      const value = row[key];
+      if (typeof value === "undefined") return;
+      if ((typeof value !== "number" && typeof value !== "string") || !Number.isFinite(Number(value))) fail();
+    });
+    booleans.forEach((key) => {
+      if (typeof row[key] !== "undefined" && typeof row[key] !== "boolean") fail();
+    });
+  };
+
+  if (!isRecord(input)) fail();
+  ["assets", "monthly", "entries"].forEach((key) => {
+    if (!Array.isArray(input[key])) fail();
+  });
+  input.assets.forEach((row) => fields(row,
+    ["id", "layer", "element", "name", "type", "status", "bufferDestinationId", "bufferDestination", "updated", "note"],
+    ["target", "value", "cost"]));
+  input.monthly.forEach((row) => {
+    fields(row,
+      ["id", "month", "note", "allocationMode", "effectiveAllocationMode", "allocationNote", "allocationCreatedAt"],
+      ["income", "expense", "invested", "monthEndAssets", "specRatio", "plannedInvested", "reserve", "savingRate"]);
+    if (typeof row.allocationPlan !== "undefined") {
+      if (!Array.isArray(row.allocationPlan)) fail();
+      row.allocationPlan.forEach((plan) => fields(plan,
+        ["assetId", "name", "layer", "reason", "bufferTo"],
+        ["target", "normalizedTarget", "amount", "bufferRedirected", "bufferUnavailable", "bufferIncoming"],
+        ["skipped"]));
+    }
+    if (typeof row.allocationSummary !== "undefined") {
+      fields(row.allocationSummary, [],
+        ["cashflowAvailable", "targetSaving", "investBase", "allocatedTotal", "actualRemainingCash", "remainingCash", "bufferedAllocTotal", "unbufferedCash", "speculativeRatio"],
+        ["speculativePaused"]);
+    }
+  });
+  input.entries.forEach((row) => fields(row,
+    ["id", "kind", "date", "target", "channel", "note", "linkedAssetId", "linkedMonth"],
+    ["amount", "linkedAmount"]));
+  if (typeof input.settings !== "undefined") {
+    fields(input.settings, [], ["emergencyGoal"], ["linkInvestEntry"]);
+  }
 }
 
 function timeValue(value) {
