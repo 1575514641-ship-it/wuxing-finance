@@ -1,4 +1,4 @@
-const CACHE_NAME = "wuxing-finance-app-v8-2";
+const CACHE_NAME = "wuxing-finance-app-v8-3";
 const SCRIPT_VERSION = CACHE_NAME.slice(CACHE_NAME.lastIndexOf("-v") + 2);
 const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./sync.js", `./app.js?v=${SCRIPT_VERSION}`, `./sync.js?v=${SCRIPT_VERSION}`, "./manifest.webmanifest", "./icon.svg"];
 

@@ -32,7 +32,7 @@ const V8_PRODUCT_BY_ID = V8_PRODUCTS.reduce(function (map, row) { map[row.id] = 
 const V8_JARS = [
   { key: "emergency", name: "🛟 应急罐", desc: "生病、失业、突发情况用，不算投资" },
   { key: "study", name: "🎓 读书基金（默认关闭）", desc: "出国读研用，只放短债、货币基金、美元存款或美元货币基金" },
-  { key: "waiting", name: "⏳ 等候罐", desc: "QDII 溢价太高、暂时买不进去的钱" },
+  { key: "waiting", name: "⏳ 等候罐", desc: "买不进去的钱、以及手动暂停产品的本月额度，不区分来源" },
   { key: "investment", name: "📈 投资组合", desc: "长期，为 FIRE" },
 ];
 const V8_JAR_KEYS = ["emergency", "study", "waiting", "investment"];
@@ -1175,8 +1175,8 @@ function renderJars() {
   var waitExtra = [];
   if (jarValue("waiting") > 0) waitExtra.push("已等待 " + waitingMonths() + " 个月");
   if (waitUsd > 0) waitExtra.push("其中 " + money(waitUsd * fxRate()) + " 来自美元");
-  cards.push(jarCardHtml("⏳ 等候罐", jarValue("waiting"), 0, "QDII 溢价太高、暂时买不进去的钱", waitExtra.join("｜")));
-  cards.push(jarCardHtml("📈 投资组合", portfolioValue(), 0, "长期，为 FIRE；按 v8.2 比例分配", ""));
+  cards.push(jarCardHtml("⏳ 等候罐", jarValue("waiting"), 0, "买不进去的钱、以及手动暂停产品的本月额度，不区分来源", waitExtra.join("｜")));
+  cards.push(jarCardHtml("📈 投资组合", portfolioValue(), 0, "长期，为 FIRE；按 v8.3 比例分配", ""));
   wrap.innerHTML = cards.join("");
 }
 
@@ -1194,7 +1194,7 @@ function renderAssets() {
     list.innerHTML = '<div class="empty-state">' +
       '<div class="empty-icon">📊</div>' +
       '<b>还没有资产</b>' +
-      '<p>点「套用 v8.2 配置」一键导入推荐方案，或手动新增资产。</p>' +
+      '<p>点「套用 v8.3 配置」一键导入推荐方案，或手动新增资产。</p>' +
       '</div>';
     return;
   }
@@ -2144,6 +2144,7 @@ function distributeByGap(entries, budget, minComm) {
 // 核心分配引擎（v8.0）
 // 顺序：应急罐优先 → 读书基金（默认关闭）→ 投资组合按缺口；外派阶段再按币种拆
 function calcAllocation(inputs) {
+  // v8.3：每月投入 = 可投现金流全部进分配流程；目标储蓄率只作检查项，不再截断金额
   var savingRate = inputs.savingRatePct / 100;
   var expat = Boolean(inputs.expat);
   var fx = Number.isFinite(inputs.fxRate) && inputs.fxRate > 0 ? inputs.fxRate : fxRate();
@@ -2151,9 +2152,12 @@ function calcAllocation(inputs) {
   var totalIncome = max0(inputs.income) + (expat ? usdIncomeRmb : 0);
   var cashflowAvailable = Math.max(totalIncome - inputs.expense - inputs.reserve, 0);
   var targetSaving = totalIncome * savingRate;
-  var rawInvestBase = Math.min(cashflowAvailable, targetSaving);
-  var investBase = Math.round(rawInvestBase);
+  var investBase = Math.round(cashflowAvailable);
   var remainingCash = cashflowAvailable - investBase;
+  // 实际储蓄率 = 可投现金流 ÷ 收入（外派时收入含美元折算）；低于目标只提醒，不卡金额
+  var actualSavingRate = totalIncome > 0 ? cashflowAvailable / totalIncome : 0;
+  var savingBelowTarget = totalIncome > 0 && actualSavingRate + 1e-9 < savingRate;
+  var savingShortfall = savingBelowTarget ? Math.max(targetSaving - cashflowAvailable, 0) : 0;
 
   var items = investmentAssets();
   var totalAssets = items.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
@@ -2388,14 +2392,25 @@ function calcAllocation(inputs) {
   var extraLayers = Object.keys(layers).filter(function (l) { return layerOrder.indexOf(l) === -1; });
   var layerList = layerOrder.concat(extraLayers).filter(function (l) { return layers[l]; }).map(function (l) { return layers[l]; });
 
+  // v8.3：剩余现金 = 真正分不出去的部分。等候罐（溢价 / 暂停）与外派的弹药罐 / 建议结汇都已指定去向，
+  // 不算剩余现金；只有「没有缺口可分」和「取整零头」才是。
+  var designatedTotal = waitingFromPremium + waitingFromSuspended +
+    (expatInfo ? numberValue(expatInfo.ammoTopUp) + numberValue(expatInfo.suggestConvert) : 0);
+  var actualRemainingCash = Math.max(cashflowAvailable - allocatedTotal - designatedTotal, 0);
+
   return {
     inputs: inputs,
     cashflowAvailable: cashflowAvailable,
     targetSaving: targetSaving,
+    totalIncome: totalIncome,
+    actualSavingRate: actualSavingRate,
+    savingBelowTarget: savingBelowTarget,
+    savingShortfall: savingShortfall,
     investBase: investBase,
     allocatedTotal: allocatedTotal,
     remainingCash: remainingCash,
-    actualRemainingCash: cashflowAvailable - allocatedTotal,
+    actualRemainingCash: actualRemainingCash,
+    designatedTotal: designatedTotal,
     savingRate: savingRate,
     savingRatePct: inputs.savingRatePct,
     useCorrection: useCorrection,
@@ -2473,6 +2488,21 @@ function renderAllocate() {
   if (savingRateEl) savingRateEl.value = defSavingRate;
 
   refreshAllocation();
+}
+
+// v8.3：目标储蓄率只作检查项 —— 实际储蓄率低于目标时在分配结果上方给黄色提醒，不卡金额
+function renderSavingRateWarning(result) {
+  var el = document.querySelector("#savingRateWarning");
+  if (!el) return;
+  if (!result.savingBelowTarget) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = "<b>实际储蓄率 " + pct(result.actualSavingRate) + "，低于目标 " + result.savingRatePct + "%</b>" +
+    "<span>可投现金流 " + money(result.cashflowAvailable) + " ÷ 收入 " + money(result.totalIncome) +
+    "；本月仍按全部可投现金流分配（不卡金额），缺口约 " + money(result.savingShortfall) + " 元，靠压缩支出或提高收入补。</span>";
 }
 
 function renderJarAllocation(result) {
@@ -2573,8 +2603,11 @@ function refreshAllocation() {
   document.querySelector("#allocCashflow").textContent = money(result.cashflowAvailable);
   document.querySelector("#allocSavingPct").textContent = inputs.savingRatePct;
   document.querySelector("#allocTargetSaving").textContent = money(result.targetSaving);
+  var actualRateEl = document.querySelector("#allocActualSaving");
+  if (actualRateEl) actualRateEl.textContent = result.totalIncome > 0 ? pct(result.actualSavingRate) : "—";
   document.querySelector("#allocFinalInvest").textContent = money(result.allocatedTotal);
   document.querySelector("#allocRemaining").textContent = money(result.actualRemainingCash);
+  renderSavingRateWarning(result);
   renderJarAllocation(result);
   renderAllocationChecklist(result);
   renderDrawdownChecker();
@@ -2585,7 +2618,6 @@ function refreshAllocation() {
   if (result.targetMissing) hints.push("目标占比未设置，请先在资产页设置目标占比。");
   if (!result.emergency.full) hints.push("先打地基：应急罐还差 " + money(result.emergency.gap) + " 元，预计 " + result.emergency.monthsToFull + " 个月存满；存满之前其他步骤跳过。");
   if (result.cashflowAvailable <= 0) hints.push("本月现金流不足，建议先不投资，保留现金。");
-  else if (result.targetSaving > result.cashflowAvailable) hints.push("本月现金流限制，实际建议投资低于目标储蓄。");
   if (result.study.enabled) {
     if (result.study.needsGoal) hints.push("读书基金已启用但目标金额是 0：请先填目标，本月不扣款（否则永远不会自动停止）。");
     else if (result.study.stopped) hints.push("读书基金已达目标，这一步自动停止，剩余金额进投资组合。");
@@ -2599,10 +2631,15 @@ function refreshAllocation() {
   if (result.expat) hints.push(result.expat.note);
   if (result.useCorrection && result.allocatedTotal === 0 && result.investBase > 0) hints.push("当前配置无优先补仓项，本月建议保留现金。原始建议投资额度：" + money(result.investBase));
   if (result.speculativePaused) hints.push("投机层已达到或超过 " + pct(speculativeCap()) + "，本月自动暂停给投机层分配新资金。");
-  // 外派模式里「补弹药罐 / 建议结汇」的钱不算未分配现金，先从差额里扣掉再判断
-  var unallocatedCash = result.investBase - result.allocatedTotal;
-  if (result.expat) unallocatedCash = Math.max(unallocatedCash - numberValue(result.expat.ammoTopUp) - numberValue(result.expat.suggestConvert), 0);
-  if (unallocatedCash > 1) hints.push("部分产品暂停或转入等候罐，未分配金额保留现金。原始建议投资额度：" + money(result.investBase));
+  // v8.3：剩余现金只剩真正分不出去的部分（等候罐 / 弹药罐 / 建议结汇都已指定去向，不算剩余现金）
+  if (result.actualRemainingCash > 1) {
+    var cashReasons = [];
+    var allAtTarget = result.products.every(function (p) { return numberValue(p.gapAmount) <= 0; });
+    if (allAtTarget) cashReasons.push("所有产品都已达到目标，没有缺口可分");
+    if (result.expat && numberValue(result.expat.rmbUnallocated) > 1) cashReasons.push("人民币池没有缺口可分（国内产品都到目标）");
+    if (!cashReasons.length) cashReasons.push("没有可补的缺口");
+    hints.push("剩余现金 " + money(result.actualRemainingCash) + " 是本月真正分不出去的部分（" + cashReasons.join("；") + "），先留在活钱里。");
+  }
   if (hints.length) {
     hint.style.display = "block";
     hint.innerHTML = hints.map(function (t) { return '<div class="tip">' + esc(t) + "</div>"; }).join("");
@@ -2832,6 +2869,9 @@ function saveAllocation() {
     allocationSummary: {
       cashflowAvailable: result.cashflowAvailable,
       targetSaving: result.targetSaving,
+      targetSavingRatePct: inputs.savingRatePct,
+      actualSavingRate: result.actualSavingRate,
+      savingBelowTarget: result.savingBelowTarget,
       investBase: result.investBase,
       allocatedTotal: result.allocatedTotal,
       actualRemainingCash: result.actualRemainingCash,
@@ -2860,7 +2900,8 @@ function saveAllocation() {
     savingRate: inputs.savingRatePct / 100,
     usdIncome: inputs.expat ? inputs.usdIncome : 0,
     fxRate: inputs.fxRate,
-    allocationNote: "本月计划投资 " + money(result.allocatedTotal) + "，储蓄率 " + inputs.savingRatePct + "%，模式：" + effectiveMode,
+    allocationNote: "本月计划投资 " + money(result.allocatedTotal) + "（全部可投现金流），实际储蓄率 " + pct(result.actualSavingRate) +
+      "（目标 " + inputs.savingRatePct + "%），模式：" + effectiveMode,
     allocationCreatedAt: now.toISOString(),
     invested: currentMonth ? currentMonth.invested || 0 : 0,
     monthEndAssets: currentMonth ? currentMonth.monthEndAssets || 0 : 0,
@@ -3394,7 +3435,7 @@ document.querySelector("#marketValueForm")?.addEventListener("submit", (event) =
 });
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
-  if (!confirm("套用 v8.2 配置：按新方案更新资产的目标占比、层级、产品代码、费率和罐子归属。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值 / 累计投入 / 更新日期 / 备注\n• 「能不能买」和你手动设的「状态」（手动暂停）都按现在的保留，不会被重置\n• id 或名称匹配的产品就地更新；新增的会创建\n• 不在新方案里的产品会保留但目标设为 0（你可以手动删除或调整）\n• 应急罐 / 读书基金 / 等候罐会补齐，已有金额不动\n\n确定继续吗？")) return;
+  if (!confirm("套用 v8.3 配置：按新方案更新资产的目标占比、层级、产品代码、费率和罐子归属。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值 / 累计投入 / 更新日期 / 备注\n• 「能不能买」和你手动设的「状态」（手动暂停）都按现在的保留，不会被重置\n• id 或名称匹配的产品就地更新；新增的会创建\n• 不在新方案里的产品会保留但目标设为 0（你可以手动删除或调整）\n• 应急罐 / 读书基金 / 等候罐会补齐，已有金额不动\n\n确定继续吗？")) return;
   var byId = {};
   var byName = {};
   data.assets.forEach(function (a) { byId[a.id] = a; byName[a.name] = a; });
@@ -3424,7 +3465,7 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
     }
     nextAssets.push(Object.assign({}, orphan, {
       target: 0, status: orphan.status === "paused:manual" ? "paused:manual" : "available", bufferDestinationId: "", bufferDestination: "",
-      note: (orphan.note ? orphan.note + "｜" : "") + "已不在 v8.2 方案，建议清仓后删除",
+      note: (orphan.note ? orphan.note + "｜" : "") + "已不在 v8.3 方案，建议清仓后删除",
     }));
   });
   ["emergency", "study", "waiting"].forEach(function (jar) {
@@ -3433,7 +3474,7 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   data.assets = nextAssets;
   if (!saveData()) return;
   render();
-  alert("v8.2 配置已套用。建议去「资产」Tab 检查每项的罐子、层级、目标占比和状态（「能不能买」按你原来的设置保留）。");
+  alert("v8.3 配置已套用。建议去「资产」Tab 检查每项的罐子、层级、目标占比和状态（「能不能买」按你原来的设置保留）。");
 });
 
 // 出海清单打勾（任务 6.4）：状态存 settings.tripChecklist，刷新页面后仍在

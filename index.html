@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111827">
-  <title>五行理财 v8.2</title>
+  <title>五行理财 v8.3</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v8.2</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v8.3</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -91,7 +91,7 @@
         </div>
         <div id="jarCards" class="jar-cards"></div>
         <div id="rebalanceTips" class="tips"></div>
-        <div class="guard-note">v8.2 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.2 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
+        <div class="guard-note">v8.3 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.3 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
         <div id="assetList" class="card-list"></div>
       </section>
 
@@ -99,7 +99,7 @@
         <div class="section-head">
           <div>
             <h2>月薪分配</h2>
-            <p>工资到账后先补应急罐，再分配，最后执行。</p>
+            <p>可投现金流（收入 − 固定支出 − 机动预留）全部进分配：应急罐 → 读书基金 → 投资组合。目标储蓄率只作达标检查。</p>
           </div>
         </div>
 
@@ -117,7 +117,7 @@
             <input id="allocReserve" type="text" inputmode="decimal" placeholder="0">
           </div>
           <div class="alloc-field">
-            <label for="allocSavingRate">目标储蓄率（%）</label>
+            <label for="allocSavingRate">目标储蓄率（%）<small>只作达标检查，不再截断本月投入</small></label>
             <input id="allocSavingRate" type="text" inputmode="decimal" placeholder="35">
           </div>
         </div>
@@ -151,10 +151,13 @@
 
         <div id="jarAllocation" class="jar-allocation"></div>
 
+        <div id="savingRateWarning" class="target-warning" hidden></div>
+
         <div id="allocResult" class="alloc-result">
           <div class="alloc-summary">
             <div class="alloc-summary-row"><span>现金流可投</span><strong id="allocCashflow">¥0</strong></div>
-            <div class="alloc-summary-row"><span>目标储蓄（<span id="allocSavingPct">35</span>%）</span><strong id="allocTargetSaving">¥0</strong></div>
+            <div class="alloc-summary-row"><span>实际储蓄率（目标 <span id="allocSavingPct">35</span>%）</span><strong id="allocActualSaving">—</strong></div>
+            <div class="alloc-summary-row"><span>目标储蓄额（参考）</span><strong id="allocTargetSaving">¥0</strong></div>
             <div class="alloc-summary-row primary"><span>最终分配</span><strong id="allocFinalInvest">¥0</strong></div>
             <div class="alloc-summary-row"><span>剩余现金</span><strong id="allocRemaining">¥0</strong></div>
           </div>
@@ -232,7 +235,7 @@
             <p>配置基线：现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%（上限 10%）。喜金水，忌火木。</p>
           </div>
           <div class="section-actions">
-            <button id="applyHalfFireBtn" class="primary-btn">套用 v8.2 配置</button>
+            <button id="applyHalfFireBtn" class="primary-btn">套用 v8.3 配置</button>
           </div>
         </div>
 
@@ -256,7 +259,7 @@
           <article><b>纪律｜核心</b><span>少操作就是多赚钱。先存后花。</span></article>
           <article><b>配置基线</b><span>现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%（上限 10%）= 100%。短视频只吸收纪律，不照搬比例。</span></article>
           <article><b>风险承受</b><span>股票类（生财 + 成长 + 投机）合计约 60%，对应最大回撤约 30%。经历过一次大跌后，才考虑把成长层提高到 35%～40%。</span></article>
-          <article><b>收官边界</b><span>v8.1 收官后只修 bug、回填真实信息和更新说明（v8.2 即此类小修）；规则每年 1 月最多修改一次，其余时间只执行。</span></article>
+          <article><b>收官边界</b><span>v8.1 收官后只修 bug、回填真实信息和更新说明（v8.2 / v8.3 即此类小修）；规则每年 1 月最多修改一次，其余时间只执行。</span></article>
           </div>
 
           <h3 class="rule-section-title">行为铁律</h3>
@@ -266,6 +269,7 @@
           <article><b>月看一次</b><span>每月最多看一次账户。每天看 = 50% 概率看到亏损 = 焦虑 = 乱操作。</span></article>
           <article><b>自动化</b><span>能设自动定投就设。决策次数越少，犯错机会越少。</span></article>
           <article><b>应急罐先行</b><span>目标 1.5 万（余额宝 / 货币基金），存满之前不投资；覆盖入职安顿、证件体检、装备和一次临时回国。应急罐、读书基金、等候罐里的钱不计入投资组合的比例和偏离度。</span></article>
+          <article><b>每月投入</b><span>本月可投现金流（收入 − 固定支出 − 机动预留）全部进分配流程：应急罐 → 读书基金 → 投资组合，不按储蓄率截断。目标储蓄率只作达标检查，实际储蓄率 = 可投现金流 ÷ 收入，低于目标时分配页给黄色提醒，金额照分。剩余现金只剩真正分不出去的部分（没有缺口可分、取整零头），会说明原因。</span></article>
           <article><b>外派期间每月固定动作</b><span>① 看应急罐，不满先补；② 美元买美股 QDII 美元份额，买不进放等候罐；③ 人民币在东方财富买离目标最远的 1～2 只国内 ETF，长短债在场外买；④ 多出来的美元先补弹药罐，其余每季度结汇一次换成人民币；⑤ 记账，关掉 App，这个月不再看。</span></article>
           </div>
 
@@ -321,7 +325,7 @@
         <details class="rule-section">
           <summary>参考资料</summary>
 
-          <h3 class="rule-section-title">产品表（v8.2）</h3>
+          <h3 class="rule-section-title">产品表（v8.3）</h3>
           <div class="product-table-wrap">
           <table class="product-table">
             <thead><tr><th>层级</th><th>产品</th><th>代码</th><th>年费率</th><th>在哪买</th><th>能不能买</th></tr></thead>
@@ -337,7 +341,7 @@
               <tr><td>投机</td><td>华安纳斯达克100ETF</td><td>159632</td><td>0.80%</td><td>看溢价</td><td>正常</td></tr>
             </tbody>
           </table>
-          <small class="rule-note">「能不能买」（正常 / 限购 / 暂停申购 / 溢价过高）由你在资产卡片里手动更新；标记为「暂停申购」的产品在分配页不会被推荐，本月额度进等候罐。资产「状态」里的「手动暂停」同口径处理，额度一样进等候罐、不分给其他产品。「套用 v8.2 配置」只更新比例 / 层级 / 代码 / 费率 / 罐子归属，你标的「能不能买」和「手动暂停」都会保留。黄金在华夏黄金ETF 518850 与博时黄金ETF 159937 之间二选一，默认 518850。场内 ETF 需开券商账户（东方财富）：ETF 佣金按万分之 2.5（正在申请下调，若下调改这里），最低 5 元未确认，先按「收最低 5 元」保守处理。</small>
+          <small class="rule-note">「能不能买」（正常 / 限购 / 暂停申购 / 溢价过高）由你在资产卡片里手动更新；标记为「暂停申购」的产品在分配页不会被推荐，本月额度进等候罐。资产「状态」里的「手动暂停」同口径处理，额度一样进等候罐、不分给其他产品。等候罐说明与资产卡片一致：买不进去的钱、以及手动暂停产品的本月额度，不区分来源。「套用 v8.3 配置」只更新比例 / 层级 / 代码 / 费率 / 罐子归属，你标的「能不能买」和「手动暂停」都会保留。黄金在华夏黄金ETF 518850 与博时黄金ETF 159937 之间二选一，默认 518850。场内 ETF 需开券商账户（东方财富）：ETF 佣金按万分之 2.5（正在申请下调，若下调改这里），最低 5 元未确认，先按「收最低 5 元」保守处理。</small>
           </div>
 
           <h3 class="rule-section-title">溢价分级说明（QDII，四档）</h3>
@@ -424,6 +428,8 @@
         <details class="rule-section">
           <summary>更新说明</summary>
           <div class="rule-grid">
+          <article><b>v8.3 · 分配</b><span>每月投入改成「可投现金流全部进分配」，不再按目标储蓄率截断；目标储蓄率降级为检查项，实际储蓄率低于目标时分配结果上方给黄色提醒，不卡金额；「剩余现金」只剩真正分不出去的部分（没有缺口可分、取整零头），并说明原因。</span></article>
+          <article><b>v8.3 · 等候罐</b><span>等候罐说明文字与规则页统一：买不进去的钱、以及手动暂停产品的本月额度，不区分来源。</span></article>
           <article><b>v8.2 · 暂停</b><span>资产「状态」设为「手动暂停」的产品，本月额度改入等候罐，和「暂停申购」同一条逻辑，不再分给其他产品。等候罐不区分来源，买不进去的和手动暂停的都在同一个罐里，补回按同一条「窗口重开」规则执行。「套用配置」只更新比例 / 层级 / 代码 / 费率 / 罐子归属，你标的「能不能买」和「手动暂停」状态保留。</span></article>
           <article><b>v8.2 · 仓库</b><span>.gitignore 里「使用说明.md」一行已删除（对已被 git 跟踪的文件本来就不生效）。</span></article>
           <article><b>v8.1 · 修正</b><span>修外派阶段「美元一分不投、钱凭空消失」的分配 bug（改为先用美元、人民币补剩下的，并加资金守恒校验）；修剪提醒只在每年 1 月给买卖建议，其余月份只用新增资金纠偏；黄金 10% 上限落到代码（从产品表 cap 读）；QDII 溢价分级合并为四档（&lt; 2% / 2～3% / 3～5% / &gt; 5%）。</span></article>
@@ -617,11 +623,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=8-2"></script>
+  <script src="./sync.js?v=8-3"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=8-2"></script>
+  <script src="./app.js?v=8-3"></script>
 </body>
 </html>
