@@ -91,7 +91,7 @@
         </div>
         <div id="jarCards" class="jar-cards"></div>
         <div id="rebalanceTips" class="tips"></div>
-        <div class="guard-note">v8.0 配置已定：比例只看不改，月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
+        <div class="guard-note">v8.0 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.0 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
         <div id="assetList" class="card-list"></div>
       </section>
 
@@ -468,8 +468,8 @@
             <input id="fireRealReturn" type="text" inputmode="decimal" value="3">
           </div>
           <div class="alloc-field">
-            <label for="fireSupplementIncome">半 FIRE 后年税后净劳动收入（今天购买力）</label>
-            <input id="fireSupplementIncome" type="text" inputmode="decimal" value="60000">
+            <label for="fireSupplementIncome">半 FIRE 后年税后净劳动收入（可选，默认 0）</label>
+            <input id="fireSupplementIncome" type="text" inputmode="decimal" value="0">
           </div>
           <div class="alloc-field">
             <label for="fireExpectedReturn">预期名义收益率（%）</label>

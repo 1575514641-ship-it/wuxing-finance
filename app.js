@@ -71,6 +71,13 @@ const V8_DEFAULTS = {
   fireSavingGrowthPct: 3,
   fireStudyRatioPct: 0,
 };
+// v7 已移除产品：迁移时的处理表（必须在模块初始化前就绪，不能放在文件后面）
+const V7_REMOVED_PRODUCTS = {
+  "cash-usd": { mergeInto: "cash-rmb", note: "v8.0 已并入现金/弹药（货币基金）" },
+  "global-healthcare": { note: "v8.0 已移除（标普医疗 161126 长期暂停申购）" },
+  "gold-miners": { note: "v8.0 已移除（黄金矿股）" },
+  "speculative-stock": { note: "v8.0 已移除（自选个股 5% 占位）" },
+};
 const V8_SCHEMA_VERSION = 8;
 const BUFFER_DEFAULT_ID = "cash-rmb";
 const BUFFER_DEFAULT = "货币基金";
@@ -357,13 +364,6 @@ function pickSettings(raw) {
 
 // v7.x → v8.0 迁移：只跑一次（settings.schemaVersion 标记）。
 // 铁律：金额、流水、月度复盘、FIRE 参数、同步码一条都不丢；产品按 id 就地升级，随手记的历史联动不断。
-const V7_REMOVED_PRODUCTS = {
-  "cash-usd": { mergeInto: "cash-rmb", note: "v8.0 已并入现金/弹药（货币基金）" },
-  "global-healthcare": { note: "v8.0 已移除（标普医疗 161126 长期暂停申购）" },
-  "gold-miners": { note: "v8.0 已移除（黄金矿股）" },
-  "speculative-stock": { note: "v8.0 已移除（自选个股 5% 占位）" },
-};
-
 function migrateToV8(input) {
   const source = isPlainRecord(input) ? input : {};
   // 幂等：已经是 v8 结构就直接返回，避免重复插入罐子资产
@@ -1075,6 +1075,7 @@ function render() {
     renderAssets();
     renderTargetWarning();
     renderTripChecklist();
+    renderElementTable();
     renderAllocate();
     renderFire();
     renderMonthly();
@@ -1119,6 +1120,24 @@ function renderTargetWarning() {
   el.hidden = false;
   el.innerHTML = '<b>配置比例需要确认</b>' +
     check.issues.map(function (text) { return "<span>" + esc(text) + "</span>"; }).join("");
+}
+
+// 五行对照表（任务 10）：全站唯一一套「五行 ↔ 层级 ↔ 目标比例 ↔ 产品」
+function renderElementTable() {
+  var wrap = document.querySelector("#elementTable");
+  if (!wrap) return;
+  var rows = V8_LAYERS.map(function (layer) {
+    var products = V8_PRODUCTS.filter(function (p) { return p.layer === layer.name; });
+    var names = products.length
+      ? products.map(function (p) {
+        return p.name + " " + pct(p.target) + (p.code ? "（" + p.code + "）" : "");
+      }).join("、")
+      : "杠杆、虚拟币、期权、初创股权（不可配置）";
+    return "<tr><td>" + esc(layer.element) + "</td><td>" + esc(layer.label) + "</td><td>" +
+      pct(layer.target) + (layer.cap ? "（上限 " + pct(layer.cap) + "）" : "") + "</td><td>" + esc(names) + "</td></tr>";
+  }).join("");
+  wrap.innerHTML = '<table class="element-table"><thead><tr><th>五行</th><th>层级</th><th>目标比例</th><th>产品</th></tr></thead><tbody>' +
+    rows + "</tbody></table>";
 }
 
 // 四个罐子卡片（任务 2）：应急罐 / 读书基金（默认关闭）/ 等候罐 / 投资组合
@@ -1698,7 +1717,7 @@ function getFireInputs() {
     targetAge: pick("#fireTargetAge", 35),
     inflationRatePct: pick("#fireInflationRate", 3),
     realReturnPct: pick("#fireRealReturn", V8_DEFAULTS.fireMinRealReturnPct),
-    supplementIncome: pick("#fireSupplementIncome", 60000),
+    supplementIncome: pick("#fireSupplementIncome", 0),
     expectedReturnPct: pick("#fireExpectedReturn", V8_DEFAULTS.fireExpectedReturnPct),
     monthlyContribution: explicitContribution ? numberValue(contribRaw) : estimateMonthlyContribution(),
     domesticMonthly: pick("#fireDomesticMonthly", V8_DEFAULTS.fireDomesticMonthly),
@@ -1782,7 +1801,11 @@ function renderFire() {
 
   var noWork = calcFire(Object.assign({}, inputs, { supplementIncome: 0 }));
   var noWorkEl = document.querySelector("#fireNoWork");
-  if (noWorkEl) {
+  if (noWorkEl && result.supplementIncome <= 0) {
+    noWorkEl.textContent = "";
+    noWorkEl.style.display = "none";
+  } else if (noWorkEl) {
+    noWorkEl.style.display = "block";
     var noWorkEta = noWork.projection.reachable
       ? (noWork.projection.months === 0 ? "当前已达模型目标" : monthsToDateLabel(noWork.projection.months) + "（约 " + monthsToHuman(noWork.projection.months) + "后）")
       : "80 年内未达模型目标";
@@ -2562,6 +2585,74 @@ function calcDrawdownPlan() {
   return { ammo: ammo, unit: unit, items: items, specRatio: total.specRatio };
 }
 
+function drawdownHitText(item) {
+  if (!Number.isFinite(item.dropPct)) return "填入 52 周最高价与现价后自动计算";
+  if (item.hitIndex < 0) return "未到第 1 档（-" + item.dropPct.toFixed(1) + "%）";
+  return "第 " + (item.hitIndex + 1) + " 档（-" + item.dropPct.toFixed(1) + "%）";
+}
+
+function drawdownActionText(item) {
+  if (!item.trigger) return "—";
+  if (item.blocked) return item.reason;
+  if (item.executed) return "这一档已执行过";
+  return "转 " + item.units + " 份 = " + money(item.amount);
+}
+
+// 只就地刷新结果单元格：不动输入框，避免把用户正在填的另一个价格冲掉
+function refreshDrawdownResults() {
+  var wrap = document.querySelector("#opportunityChecker");
+  if (!wrap) return;
+  var plan = calcDrawdownPlan();
+  var metrics = wrap.querySelector(".opportunity-metrics");
+  if (metrics) {
+    metrics.innerHTML =
+      "<div><span>弹药罐余额</span><strong>" + money(plan.ammo) + "</strong><small>投资组合里的现金层</small></div>" +
+      "<div><span>1 份 =</span><strong>" + money(plan.unit) + "</strong><small>弹药罐余额 ÷ 3，三档正好用完</small></div>";
+  }
+  plan.items.forEach(function (item) {
+    var row = null;
+    wrap.querySelectorAll(".drawdown-row").forEach(function (el) {
+      if (el.getAttribute("data-dd-row") === item.assetId) row = el;
+    });
+    if (!row) return;
+    var hitEl = row.querySelector(".drawdown-hit");
+    if (hitEl) hitEl.textContent = drawdownHitText(item);
+    var doneEl = row.querySelector(".drawdown-done");
+    if (doneEl) {
+      var doneBox = item.trigger
+        ? '<label class="drawdown-done-box"><input type="checkbox" data-dd-done="' + esc(item.assetId + "_" + item.trigger.pct) + '"' + (item.executed ? " checked" : "") + ">已执行</label>"
+        : "";
+      doneEl.innerHTML = esc(drawdownActionText(item)) + doneBox;
+      var box = doneEl.querySelector("input[data-dd-done]");
+      if (box) box.addEventListener("change", onDrawdownDoneChange);
+    }
+  });
+}
+
+function onDrawdownDoneChange(event) {
+  var input = event.currentTarget;
+  var key = input.getAttribute("data-dd-done");
+  if (!data.settings) data.settings = {};
+  if (!isPlainRecord(data.settings.drawdownDone)) data.settings.drawdownDone = {};
+  if (input.checked) data.settings.drawdownDone[key] = true;
+  else delete data.settings.drawdownDone[key];
+  if (!saveData()) return;
+  refreshDrawdownResults();
+}
+
+function onDrawdownInputChange(event) {
+  var input = event.currentTarget;
+  var id = input.getAttribute("data-dd-id");
+  var field = input.getAttribute("data-dd-field");
+  var value = parseFloat(input.value);
+  if (!data.settings) data.settings = {};
+  if (!isPlainRecord(data.settings.drawdownInputs)) data.settings.drawdownInputs = {};
+  if (!isPlainRecord(data.settings.drawdownInputs[id])) data.settings.drawdownInputs[id] = {};
+  data.settings.drawdownInputs[id][field] = Number.isFinite(value) ? value : 0;
+  if (!saveData()) return;
+  refreshDrawdownResults();
+}
+
 function renderDrawdownChecker() {
   var wrap = document.querySelector("#opportunityChecker");
   if (!wrap) return;
@@ -2569,24 +2660,15 @@ function renderDrawdownChecker() {
   var keepOpen = !!(panel && panel.open);
   var plan = calcDrawdownPlan();
   var rows = plan.items.map(function (item) {
-    var hitText = Number.isFinite(item.dropPct)
-      ? (item.hitIndex >= 0
-        ? "第 " + (item.hitIndex + 1) + " 档（-" + item.dropPct.toFixed(1) + "%）"
-        : "未到第 1 档（-" + item.dropPct.toFixed(1) + "%）")
-      : "填入 52 周最高价与现价后自动计算";
-    var action = item.trigger
-      ? (item.blocked ? item.reason : (item.executed ? "这一档已执行过" : "转 " + item.units + " 份 = " + money(item.amount)))
-      : "—";
     var doneBox = item.trigger
       ? '<label class="drawdown-done-box"><input type="checkbox" data-dd-done="' + esc(item.assetId + "_" + item.trigger.pct) + '"' + (item.executed ? " checked" : "") + ">已执行</label>"
       : "";
-    return '<div class="drawdown-row' + (item.blocked ? " blocked" : "") + '">' +
+    return '<div class="drawdown-row' + (item.blocked ? " blocked" : "") + '" data-dd-row="' + esc(item.assetId) + '">' +
       '<div class="drawdown-name"><b>' + esc(item.name) + "</b><small>" + esc(item.assetName) + "</small></div>" +
       '<label class="drawdown-input">52 周最高<input type="number" step="0.001" data-dd-id="' + esc(item.assetId) + '" data-dd-field="high" value="' + (item.high || "") + '" placeholder="—"></label>' +
       '<label class="drawdown-input">现价<input type="number" step="0.001" data-dd-id="' + esc(item.assetId) + '" data-dd-field="price" value="' + (item.price || "") + '" placeholder="—"></label>' +
-      '<div class="drawdown-hit">' + esc(hitText) + "</div>" +
-      '<div class="drawdown-done">' + esc(action) + "</div>" +
-      doneBox +
+      '<div class="drawdown-hit">' + esc(drawdownHitText(item)) + "</div>" +
+      '<div class="drawdown-done">' + esc(drawdownActionText(item)) + doneBox + "</div>" +
     "</div>";
   }).join("");
   wrap.innerHTML =
@@ -2600,28 +2682,10 @@ function renderDrawdownChecker() {
       '<div class="drawdown-panel">' + rows + "</div>" +
     "</details>";
   wrap.querySelectorAll("input[data-dd-id]").forEach(function (input) {
-    input.addEventListener("change", function () {
-      var id = input.getAttribute("data-dd-id");
-      var field = input.getAttribute("data-dd-field");
-      var value = parseFloat(input.value);
-      if (!data.settings) data.settings = {};
-      if (!isPlainRecord(data.settings.drawdownInputs)) data.settings.drawdownInputs = {};
-      if (!isPlainRecord(data.settings.drawdownInputs[id])) data.settings.drawdownInputs[id] = {};
-      data.settings.drawdownInputs[id][field] = Number.isFinite(value) ? value : 0;
-      if (!saveData()) return;
-      renderDrawdownChecker();
-    });
+    input.addEventListener("change", onDrawdownInputChange);
   });
   wrap.querySelectorAll("input[data-dd-done]").forEach(function (input) {
-    input.addEventListener("change", function () {
-      var key = input.getAttribute("data-dd-done");
-      if (!data.settings) data.settings = {};
-      if (!isPlainRecord(data.settings.drawdownDone)) data.settings.drawdownDone = {};
-      if (input.checked) data.settings.drawdownDone[key] = true;
-      else delete data.settings.drawdownDone[key];
-      if (!saveData()) return;
-      renderDrawdownChecker();
-    });
+    input.addEventListener("change", onDrawdownDoneChange);
   });
 }
 
