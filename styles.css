@@ -1130,3 +1130,418 @@ dialog footer { border-top: 1px solid var(--line); border-bottom: 0; }
   .form-grid    { grid-template-columns: 1fr; }
   .sync-actions .primary-btn, .sync-actions .danger-btn { flex: 1; }
 }
+
+/* ============================================================
+   v8.0 additions (2026-10-07)
+   New components only. Existing classes keep their meaning; the
+   only additive tweaks are wrap/overflow guards on legacy rows
+   (.alloc-product) and scoped min-width for scrollable tables.
+   ============================================================ */
+
+/* ---- top warning bar (allocation ratio sum != 100%) ---- */
+.target-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-border);
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.target-warning > i,
+.target-warning > em {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.target-warning > b,
+.target-warning > strong,
+.target-warning > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---- four jar cards ---- */
+.jar-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.jar-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.jar-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 8px;
+  min-width: 0;
+}
+.jar-card-head b { min-width: 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.jar-card-head span { color: var(--muted); font-size: 12px; }
+.jar-card-head strong { font-size: 15px; font-weight: 700; letter-spacing: -.2px; white-space: nowrap; }
+.jar-card > strong { font-size: 20px; font-weight: 700; letter-spacing: -.3px; color: var(--ink); }
+.jar-progress {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+.jar-fill {
+  display: block;
+  width: 0;
+  max-width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width .4s ease;
+}
+.jar-card-usd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.jar-card-usd b { color: var(--ink2); font-size: 13px; font-weight: 600; }
+.jar-card-note {
+  display: block;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ---- allocation page: extra switches and input rows ---- */
+.alloc-extra {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.switch-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+  color: var(--ink2);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.switch-field > input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  cursor: pointer;
+}
+.switch-field > span,
+.switch-field > b,
+.switch-field > label { min-width: 0; overflow-wrap: anywhere; }
+.switch-field > span { flex: 1 1 auto; }
+.switch-field > small { flex: 0 0 100%; color: var(--muted); font-size: 12px; }
+.switch-field input[type="text"],
+.switch-field input[type="number"] { min-width: 0; max-width: 100%; }
+
+/* ---- allocation split display ---- */
+.jar-allocation {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.jar-allocation > b,
+.jar-allocation > h3,
+.jar-allocation > h4 { font-size: 14px; font-weight: 700; }
+.jar-split-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+  min-width: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line2);
+}
+.jar-split-row:last-child { border-bottom: 0; }
+.jar-split-row > span,
+.jar-split-row > div { min-width: 0; }
+.jar-split-row span { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+.jar-split-row small { color: var(--faint); font-size: 11px; }
+.jar-split-row strong { font-size: 15px; font-weight: 600; letter-spacing: -.2px; white-space: nowrap; }
+
+/* ---- five-element cross reference table ---- */
+.element-table-wrap {
+  max-width: 100%;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.element-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* min-width only inside the scroll wrapper: without the wrapper the
+   table can never push the page wider than the viewport. */
+.element-table-wrap .element-table { min-width: 520px; }
+.element-table th,
+.element-table td {
+  padding: 9px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+.element-table th {
+  background: var(--line2);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: .3px;
+  white-space: nowrap;
+}
+.element-table tr:last-child td { border-bottom: 0; }
+.element-table td:first-child { white-space: nowrap; }
+
+/* ---- overseas checklist items ---- */
+.trip-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  margin-bottom: 6px;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+  color: var(--ink2);
+  font-size: 13px;
+  line-height: 1.55;
+  cursor: pointer;
+}
+.trip-item:last-child { margin-bottom: 0; }
+.trip-item input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  cursor: pointer;
+}
+.trip-item > span,
+.trip-item > b { min-width: 0; overflow-wrap: anywhere; }
+.trip-item.done { background: var(--line2); border-color: var(--line); color: var(--faint); }
+.trip-item.done,
+.trip-item.done > span,
+.trip-item.done > b { text-decoration: line-through; }
+.trip-item.done input[type="checkbox"] { opacity: 1; }
+
+/* ---- 6-column product table: internal horizontal scroll only ---- */
+.product-table-wrap { max-width: 100%; -webkit-overflow-scrolling: touch; }
+.product-table-wrap .product-table { min-width: 620px; }
+
+/* ---- suspended product card ---- */
+.card.suspended {
+  background: var(--line2);
+  border-color: var(--line);
+  opacity: .72;
+}
+.card.suspended .card-title b,
+.card.suspended .card-title span,
+.card.suspended .mini-label { color: var(--muted); }
+.card.suspended .num b { color: var(--muted); }
+.card.suspended:hover { transform: none; box-shadow: var(--shadow); }
+
+/* ---- QDII premium input ---- */
+.premium-input {
+  flex: 0 0 auto;
+  width: 72px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: right;
+}
+.premium-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(29,78,216,.1);
+}
+/* legacy rows may host the premium input: allow wrapping instead of overflow */
+.alloc-product { flex-wrap: wrap; }
+.alloc-product .prod-name { min-width: 0; }
+
+/* ---- drawdown checker ---- */
+.drawdown-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  overflow: hidden;
+}
+.drawdown-panel > b,
+.drawdown-panel > h4 { font-size: 13px; font-weight: 700; }
+/* .drawdown-done is declared before .drawdown-row on purpose: when both
+   classes sit on the same row element, the row keeps its flex layout. */
+.drawdown-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.drawdown-done input[type="checkbox"] { margin: 0; width: 15px; height: 15px; cursor: pointer; }
+.drawdown-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fafafa;
+}
+.drawdown-row > b { min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.drawdown-row > span { min-width: 0; color: var(--muted); font-size: 12px; }
+.drawdown-input {
+  flex: 0 0 auto;
+  width: 84px;
+  max-width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: right;
+}
+.drawdown-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(29,78,216,.1);
+}
+.drawdown-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--warn-border);
+  border-radius: 999px;
+  background: var(--warn-bg);
+  color: var(--warn-ink);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ---- FIRE three weather cards ---- */
+.fire-weather {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.weather-card {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--line2);
+}
+.weather-card span,
+.weather-card small,
+.weather-card em { color: var(--muted); font-size: 12px; font-style: normal; }
+.weather-card strong { color: var(--ink); font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+.weather-card.hit {
+  background: var(--accent-bg);
+  border-color: rgba(29,78,216,.35);
+  box-shadow: 0 0 0 2px rgba(29,78,216,.1);
+}
+.weather-card.hit strong { color: var(--accent); }
+
+/* ---- expat currency allocation ---- */
+.alloc-currency {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.alloc-currency > b { font-size: 14px; font-weight: 700; }
+.alloc-currency p,
+.alloc-currency span,
+.alloc-currency small { color: var(--muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.alloc-currency strong { font-size: 15px; color: var(--ink); }
+.alloc-currency .jar-split-row span { font-size: 13px; }
+
+/* ---- narrow screens: keep the page itself free of horizontal scroll ---- */
+@media (max-width: 760px) {
+  .jar-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .alloc-extra { grid-template-columns: 1fr; }
+  .fire-weather { grid-template-columns: 1fr; }
+  .drawdown-panel { padding: 10px; }
+  .drawdown-row { padding: 8px; }
+  .premium-input,
+  .drawdown-input { width: 78px; }
+}
+
+@media (max-width: 480px) {
+  .jar-cards { grid-template-columns: 1fr; }
+  .jar-card { padding: 12px; }
+  .jar-allocation,
+  .alloc-currency { padding: 11px 12px; }
+}
+
+/* [hidden] must be the last display rule in this file: a class rule like
+   .target-warning{display:flex} has equal specificity and would otherwise
+   win over the UA [hidden] rule, making a "hidden" element visible. */
+[hidden] { display: none; }
+
