@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111827">
-  <title>五行理财 v8.0</title>
+  <title>五行理财 v8.1</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v8.0</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v8.1</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -91,7 +91,7 @@
         </div>
         <div id="jarCards" class="jar-cards"></div>
         <div id="rebalanceTips" class="tips"></div>
-        <div class="guard-note">v8.0 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.0 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
+        <div class="guard-note">v8.1 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.1 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
         <div id="assetList" class="card-list"></div>
       </section>
 
@@ -167,7 +167,7 @@
         <div class="alloc-mode">
           <button id="allocModeCorrect" class="mode-btn active">修正模式</button>
           <button id="allocModeStandard" class="mode-btn">标准模式</button>
-          <small id="allocModeHint">修正模式：某只产品的实际占比超过其目标 3 个百分点时暂停新增，资金转去缺口最大的产品。</small>
+          <small id="allocModeHint">修正模式：某只产品超目标 3 个百分点就暂停新增，资金转去缺口最大的产品；层的偏离只在每年 1 月修剪。</small>
         </div>
 
         <div id="allocLayers" class="alloc-layers"></div>
@@ -232,7 +232,7 @@
             <p>配置基线：现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%（上限 10%）。喜金水，忌火木。</p>
           </div>
           <div class="section-actions">
-            <button id="applyHalfFireBtn" class="primary-btn">套用 v8.0 配置</button>
+            <button id="applyHalfFireBtn" class="primary-btn">套用 v8.1 配置</button>
           </div>
         </div>
 
@@ -256,7 +256,7 @@
           <article><b>纪律｜核心</b><span>少操作就是多赚钱。先存后花。</span></article>
           <article><b>配置基线</b><span>现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%（上限 10%）= 100%。短视频只吸收纪律，不照搬比例。</span></article>
           <article><b>风险承受</b><span>股票类（生财 + 成长 + 投机）合计约 60%，对应最大回撤约 30%。经历过一次大跌后，才考虑把成长层提高到 35%～40%。</span></article>
-          <article><b>收官边界</b><span>v8.0 后只修 bug、回填真实信息和更新说明；规则每年 1 月最多修改一次，其余时间只执行。</span></article>
+          <article><b>收官边界</b><span>v8.1 后只修 bug、回填真实信息和更新说明；规则每年 1 月最多修改一次，其余时间只执行。</span></article>
           </div>
 
           <h3 class="rule-section-title">行为铁律</h3>
@@ -265,14 +265,13 @@
           <article><b>发薪日即投资日</b><span>工资到账当天执行分配，不等"更好的时机"。等来的永远是错过。</span></article>
           <article><b>月看一次</b><span>每月最多看一次账户。每天看 = 50% 概率看到亏损 = 焦虑 = 乱操作。</span></article>
           <article><b>自动化</b><span>能设自动定投就设。决策次数越少，犯错机会越少。</span></article>
-          <article><b>应急金先行</b><span>先存到 1.5 万（余额宝），存满之前不投资。覆盖入职安顿、证件体检、装备和一次临时回国。</span></article>
-          <article><b>应急罐</b><span>目标 1.5 万，只放货币基金。应急罐、读书基金、等候罐里的钱，不计入投资组合的比例和偏离度。</span></article>
+          <article><b>应急罐先行</b><span>目标 1.5 万（余额宝 / 货币基金），存满之前不投资；覆盖入职安顿、证件体检、装备和一次临时回国。应急罐、读书基金、等候罐里的钱不计入投资组合的比例和偏离度。</span></article>
           <article><b>外派期间每月固定动作</b><span>① 看应急罐，不满先补；② 美元买美股 QDII 美元份额，买不进放等候罐；③ 人民币在东方财富买离目标最远的 1～2 只国内 ETF，长短债在场外买；④ 多出来的美元先补弹药罐，其余每季度结汇一次换成人民币；⑤ 记账，关掉 App，这个月不再看。</span></article>
           </div>
 
           <h3 class="rule-section-title">买卖规则</h3>
           <div class="rule-grid">
-          <article><b>溢价分级</b><span>QDII 场内溢价 &lt; 1% 正常按月买；1～2% 小额买，优先满足本月计划；2～3% 半额买，另一半进等候罐；3～5% 暂停场内，改场外每日定投或进等候罐；&gt; 5% 绝对不买场内。</span></article>
+          <article><b>溢价分级</b><span>四档：&lt; 2% 正常按月买；2～3% 半额，另一半进等候罐；3～5% 暂停场内改场外定投；&gt; 5% 绝对不买场内。完整口径见下方「参考资料 → 溢价分级说明」。</span></article>
           <article><b>持有中的高溢价</b><span>持有的场内 QDII 溢价超过 10% 时，可以卖出场内份额，换成可申购的场外同指数基金。先确认场外能买、额度够再动手。</span></article>
           <article><b>回撤口径</b><span>回撤 = 从"52 周最高收盘价"算起的跌幅。券商 App 里能直接看到 52 周最高价。</span></article>
           <article><b>回撤补仓·1 份</b><span>1 份 = 弹药罐当前余额的 1/3，三档正好用完。</span></article>
@@ -280,11 +279,9 @@
           <article><b>标普500</b><span>跌 8% 转 1 份，跌 15% 再 1 份，跌 25% 再 1 份。</span></article>
           <article><b>A500</b><span>跌 10% 转 1 份，跌 20% 再 1 份，跌 30% 再 1 份。</span></article>
           <article><b>中证500</b><span>跌 15% 转 1 份，跌 25% 再 1 份，跌 35% 最后 1 份。波动更大，不提前加速。</span></article>
-          <article><b>纳指100</b><span>跌 15 / 25 / 35% 各 0.5 份；投机层达到 10% 上限时，无论跌多少都不买。</span></article>
+          <article><b>纳指100</b><span>不追高，回撤后在投机层额度内买（跌 15 / 25 / 35% 各 0.5 份）；投机层达到 10% 上限时，无论跌多少都不买，自动暂停新增。</span></article>
           <article><b>-20% 不卖出</b><span>-20% 不卖出。宽基指数每 3～5 年跌一次 20% 以上，每次 1～3 年恢复。你在积累期，跌 = 打折，按回撤阶梯补仓。</span></article>
           <article><b>红利低波</b><span>当"股息率 − 10 年国债收益率 &lt; 1.5 个百分点"时暂停新增，其余时间按月买。它是股票，不是定存。</span></article>
-          <article><b>投机｜硬规则</b><span>单只个股 +50% 卖一半锁利；纳指等指数不适用，只按"投机层上限 10%"管理。</span></article>
-          <article><b>纳指/科技｜投机层</b><span>不追高，回撤后在投机层额度内买；达到 10% 自动暂停。</span></article>
           <article><b>修正模式</b><span>某只产品的实际占比超过其目标 3 个百分点时，暂停新增，资金转去缺口最大的产品。</span></article>
           <article><b>年度修剪</b><span>每年 1 月复盘时，任何一层偏离目标超过 ±5 个百分点，就卖多的、买少的，调回目标。其余时间只用新增资金纠偏。</span></article>
           <article><b>黄金上限</b><span>黄金不超过总投资资产的 10%，超过就暂停新增，年度修剪时卖回。</span></article>
@@ -299,8 +296,8 @@
           <article><b>奖金｜现金流</b><span>项目奖金常压到结算后发，现金层（弹药罐）留足对冲。别为跳槽损失奖金。</span></article>
           <article><b>美元补贴（境内外汇）</b><span>美元补贴发到国内美元账户，属于境内资金，不汇出境外买股票。用法：① 美元存款 / 美元货币基金；② 美股 QDII 的美元现汇份额；③ 在每年 5 万美元结汇便利额度内换成人民币。</span></article>
           <article><b>跨境券商</b><span>2026 年 5 月 22 日起，八部门整治非法跨境证券业务，境外券商不得为境内投资者开户和提供买入服务。外派期间不开海外券商账户；只有将来在国外有当地收入和当地银行账户时，才重新评估。</span></article>
-          <article><b>汇率管理</b><span>每月固定比例换汇，不赌汇率。保留 20-30% 资产在人民币。</span></article>
-          <article><b>券商账户</b><span>东方财富。实际 ETF 佣金、是否收最低 5 元需要你回填真实数字，当前按"收最低 5 元"保守处理。</span></article>
+          <article><b>汇率管理</b><span>外币敞口由配置比例决定——标普500 + 纳指100 合计约 35%，其余是人民币资产，不另设换汇比例。美元收入先买美股 QDII 美元份额，多出的先补弹药罐，其余每季度结汇一次。不赌汇率。</span></article>
+          <article><b>券商账户</b><span>东方财富。ETF 佣金万分之 2.5（2026-10-07 状态：正在申请下调，若下调改这里）；是否收最低 5 元未确认，当前按「收最低 5 元」保守处理（分配页「券商收最低 5 元」开关默认开）。</span></article>
           <article><b>读书基金（暂不启用）</b><span>想好读研后再启用。启用后每月存款先拿一定比例（默认 25%）进读书基金，优先用美元存，只放短债、货币基金、美元存款或美元货币基金，不买股票。</span></article>
           <article><b>个人养老金｜暂缓</b><span>35岁 FIRE 资金不放入个人养老金；边际税率低于20%时不启用，未来税率升高且现金流稳定再评估。</span></article>
           <article><b>一律不碰</b><span>凡是主动找上门的"代开户""高收益理财""内部渠道"，一律不碰。</span></article>
@@ -324,7 +321,7 @@
         <details class="rule-section">
           <summary>参考资料</summary>
 
-          <h3 class="rule-section-title">产品表（v8.0）</h3>
+          <h3 class="rule-section-title">产品表（v8.1）</h3>
           <div class="product-table-wrap">
           <table class="product-table">
             <thead><tr><th>层级</th><th>产品</th><th>代码</th><th>年费率</th><th>在哪买</th><th>能不能买</th></tr></thead>
@@ -340,24 +337,22 @@
               <tr><td>投机</td><td>华安纳斯达克100ETF</td><td>159632</td><td>0.80%</td><td>看溢价</td><td>正常</td></tr>
             </tbody>
           </table>
-          <small class="rule-note">「能不能买」（正常 / 限购 / 暂停申购 / 溢价过高）由你在资产卡片里手动更新；标记为「暂停申购」的产品在分配页不会被推荐。黄金在华夏黄金ETF 518850 与博时黄金ETF 159937 之间二选一，默认 518850。场内 ETF 需开券商账户（东方财富），佣金和最低收费待你回填真实数字。</small>
+          <small class="rule-note">「能不能买」（正常 / 限购 / 暂停申购 / 溢价过高）由你在资产卡片里手动更新；标记为「暂停申购」的产品在分配页不会被推荐。黄金在华夏黄金ETF 518850 与博时黄金ETF 159937 之间二选一，默认 518850。场内 ETF 需开券商账户（东方财富）：ETF 佣金按万分之 2.5（正在申请下调，若下调改这里），最低 5 元未确认，先按「收最低 5 元」保守处理。</small>
           </div>
 
-          <h3 class="rule-section-title">溢价分级说明（QDII）</h3>
+          <h3 class="rule-section-title">溢价分级说明（QDII，四档）</h3>
           <div class="rule-grid">
-          <article><b>溢价 &lt; 1%</b><span>正常按月买，场内。</span></article>
-          <article><b>溢价 1～2%</b><span>小额买，优先满足本月计划，不额外追。</span></article>
+          <article><b>溢价 &lt; 2%</b><span>正常按月买，场内。</span></article>
           <article><b>溢价 2～3%</b><span>半额买，剩余金额进等候罐。</span></article>
           <article><b>溢价 3～5%</b><span>暂停场内买入，改为场外每日定投，或进等候罐。</span></article>
           <article><b>溢价 &gt; 5%</b><span>绝对不买场内，全部改为场外每日定投；场外限购或暂停时进等候罐。</span></article>
           <article><b>建仓节奏</b><span>QDII 目标分 6～12 个月随工资爬坡；单月买入不超过该资产目标仓位的 1/4。</span></article>
-          <article><b>窗口重开</b><span>等候罐里的钱用 12 个月平均补回，单月不超过该资产目标仓位的 1/4，禁止一次性报复性买入。</span></article>
           </div>
 
           <h3 class="rule-section-title">税费速查</h3>
           <div class="rule-grid">
           <article><b>QDII 税收</b><span>美国股息预扣由基金处理。个人境外所得和税务居民身份按公司税务安排确认，不要默认免申报。</span></article>
-          <article><b>A股 ETF</b><span>宽基管理费 + 托管费约 0.20%/年，黄金 / 红利低波约 0.60%/年。基金交易免征印花税（股票卖出才收 0.05%）。资本利得暂免个税。</span></article>
+          <article><b>A股 ETF</b><span>宽基管理费 + 托管费约 0.20%/年；黄金ETF（518850）0.20%/年、红利低波ETF（512890）0.60%/年（2026-10-07 按天天基金基金费率页核实，该页注明来源为基金公司）。基金交易免征印花税（股票卖出才收 0.05%）。资本利得暂免个税。</span></article>
           <article><b>费率差距</b><span>QDII 标普（0.80%）vs 直接买美股宽基（0.03%～0.20%）：列示费率相差较大。实际迁移成本还包括汇兑、交易、税务及账户条件，不能仅凭费率判断。</span></article>
           </div>
 
@@ -371,7 +366,6 @@
 
           <h3 class="rule-section-title">海外券商 / 爱尔兰 UCITS / 美国遗产税（将来在国外有当地收入时参考）</h3>
           <div class="rule-grid">
-          <article><b>海外券商（将来参考）</b><span>2026 年 5 月 22 日起，八部门整治非法跨境证券业务，境外券商不得为境内投资者开户和提供买入服务。外派期间不开海外券商账户；只有将来在国外有当地收入和当地银行账户时，才重新评估。</span></article>
           <article><b>IB 材料准备（将来参考）</b><span>先准备护照、派驻通知、收入证明、地址证明；开户不抢跑，等派驻地和工资路径确认后执行。</span></article>
           <article><b>复核路径（将来参考）</b><span>先核实账户资格、税费和合规资金路径，再决定是否调整国内 QDII。不预设国内赎回资金可直接换汇投资境外证券，也不把择时卖在高点作为计划前提。</span></article>
           <article><b>双轨制（将来参考）</b><span>国内存量人民币继续持有 A股 + 黄金 + 纯债，不折腾；海外工资在当地投资，不换回人民币。</span></article>
@@ -423,13 +417,16 @@
 - 首年安家支出
 - 应急罐目标（默认 1.5 万）
 - QDII 溢价分级执行情况
-- 券商佣金与是否收最低 5 元</pre>
+- 券商佣金：东方财富 ETF 万分之 2.5（正在申请下调）；最低 5 元未确认（若下调，改规则页「券商账户」和产品表下方说明）</pre>
           </div>
         </details>
 
         <details class="rule-section">
           <summary>更新说明</summary>
           <div class="rule-grid">
+          <article><b>v8.1 · 修正</b><span>修外派阶段「美元一分不投、钱凭空消失」的分配 bug（改为先用美元、人民币补剩下的，并加资金守恒校验）；修剪提醒只在每年 1 月给买卖建议，其余月份只用新增资金纠偏；黄金 10% 上限落到代码（从产品表 cap 读）；QDII 溢价分级合并为四档（&lt; 2% / 2～3% / 3～5% / &gt; 5%）。</span></article>
+          <article><b>v8.1 · FIRE</b><span>删掉 6 个不起作用的输入（最低线实际收益率、每月定投、美元补贴 / 汇率 / 在国外天数、FIRE 页读书基金比例）；三条线固定 4% / 3.5% / 3%，进度条与预计达成日期统一按 3.5% 稳健线；剩余 13 个参数落盘到 settings.fire，刷新和换设备后不再回到默认值。</span></article>
+          <article><b>v8.1 · 清理</b><span>规则页去掉 4 条与别处重复的条目（参考资料里的两条、应急罐两条合一、投机硬规则并入纳指100）；旧的 buffered「暂存重定向」并入「能不能买 = 暂停申购」；删掉没有引用的费率表；首次引导第 1 步改为在应急罐里填金额。</span></article>
           <article><b>v8.0 · 配置</b><span>修正配置比例为 100%（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%，投机上限 10%）；产品表替换为 v8.0 的九行低费率版本，旧表里已下线的产品全部移除。比例合计不等于 100% 时页面顶部出现黄色提醒，计算仍按归一化继续。</span></article>
           <article><b>v8.0 · 功能</b><span>新增四个罐子（应急罐 / 读书基金 / 等候罐 / 投资组合）；分配顺序改为应急金先行，读书基金功能默认关闭；外派阶段按币种分配；QDII 新增溢价输入，按分级给出场内 / 场外 / 等候罐建议；新增回撤检查器与 FIRE 三种天气、提前回国情景。</span></article>
           <article><b>v8.0 · 规则</b><span>规则改为可量化定义（偏高按超过目标 3 个百分点、1 份 = 弹药罐余额的 1/3、回撤按 52 周最高收盘价）；新增年度修剪、黄金上限、风险承受、跨境券商、一律不碰等条目；应急罐目标改为 1.5 万。</span></article>
@@ -464,20 +461,12 @@
             <input id="fireInflationRate" type="text" inputmode="decimal" value="3">
           </div>
           <div class="alloc-field">
-            <label for="fireRealReturn">最低线实际收益率（%）</label>
-            <input id="fireRealReturn" type="text" inputmode="decimal" value="3">
-          </div>
-          <div class="alloc-field">
             <label for="fireSupplementIncome">半 FIRE 后年税后净劳动收入（可选，默认 0）</label>
             <input id="fireSupplementIncome" type="text" inputmode="decimal" value="0">
           </div>
           <div class="alloc-field">
             <label for="fireExpectedReturn">预期名义收益率（%）</label>
             <input id="fireExpectedReturn" type="text" inputmode="decimal" value="5.5">
-          </div>
-          <div class="alloc-field">
-            <label for="fireMonthlyContribution">每月定投（留空=按历史估算）</label>
-            <input id="fireMonthlyContribution" type="text" inputmode="decimal" placeholder="自动">
           </div>
           <div class="alloc-field">
             <label for="fireDomesticMonthly">国内阶段月存</label>
@@ -488,28 +477,12 @@
             <input id="fireDomesticMonths" type="text" inputmode="decimal" value="12">
           </div>
           <div class="alloc-field">
-            <label for="fireOverseasMonthly">海外阶段月存 <small>按同事到手 1.3 万估算，外派后替换为真实数字</small></label>
-            <input id="fireOverseasMonthly" type="text" inputmode="decimal" value="12500">
-          </div>
-          <div class="alloc-field">
-            <label for="fireUsdSubsidy">美元补贴（美元/月）</label>
-            <input id="fireUsdSubsidy" type="text" inputmode="decimal" value="1100">
-          </div>
-          <div class="alloc-field">
-            <label for="fireFxRate">汇率（1 美元 = ? 元）</label>
-            <input id="fireFxRate" type="text" inputmode="decimal" value="6.78">
+            <label for="fireOverseasMonthly">海外阶段月存 <small>全年平均，已含美元补贴、已扣假期；外派后用真实数字替换</small></label>
+            <input id="fireOverseasMonthly" type="text" inputmode="decimal" value="11000">
           </div>
           <div class="alloc-field">
             <label for="fireSavingGrowth">每年存款增长率（扣除通胀后，%）</label>
             <input id="fireSavingGrowth" type="text" inputmode="decimal" value="3">
-          </div>
-          <div class="alloc-field">
-            <label for="fireDaysAbroad">每年在国外的天数 <small>每年约 40 天假期没有补贴</small></label>
-            <input id="fireDaysAbroad" type="text" inputmode="decimal" value="325">
-          </div>
-          <div class="alloc-field">
-            <label for="fireStudyRatio">读书基金比例（%）<small>默认 0 = 关闭；启用后从月存中扣除，不计入 FIRE 资产</small></label>
-            <input id="fireStudyRatio" type="text" inputmode="decimal" value="0">
           </div>
           <div class="alloc-field">
             <label for="fireSetupCost">首年安家支出</label>
@@ -553,7 +526,7 @@
           <div class="fire-progress">
             <div class="alloc-summary-row"><span>净年支出</span><strong id="fireNetExpense">¥0</strong></div>
             <div class="alloc-summary-row"><span>名义系数</span><strong id="fireNominalFactor">1.000</strong></div>
-            <div class="alloc-summary-row primary"><span>当前进度（今天口径）</span><strong id="fireProgressText">0.0%</strong></div>
+            <div class="alloc-summary-row primary"><span>当前进度（今天口径，按 3.5% 稳健线）</span><strong id="fireProgressText">0.0%</strong></div>
             <div class="progress-bar"><i id="fireProgressBar"></i></div>
           </div>
 
@@ -563,7 +536,7 @@
             <small id="fireEtaSub">按国内/海外两段月存和预期收益率测算</small>
           </div>
 
-          <div id="fireSubsidyNote" class="guard-note"></div>
+          <div id="fireRateNote" class="guard-note"></div>
           <div id="fireStudyNote" class="guard-note"></div>
           <div id="fireSocialNote" class="guard-note"></div>
 
@@ -642,11 +615,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=8-0"></script>
+  <script src="./sync.js?v=8-1"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=8-0"></script>
+  <script src="./app.js?v=8-1"></script>
 </body>
 </html>
