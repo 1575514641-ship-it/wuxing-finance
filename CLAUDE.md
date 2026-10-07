@@ -113,10 +113,10 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - `dataRevision`：只在内存中计数本地保存；云端读取响应到达后重新检查，读取期间有本地保存或替换则保留本地。后台读取也须重新检查编辑弹窗和待发同步状态。
 - 随手记分组用无原型对象；账本字符串不能拼进 CSS 选择器，显示内容须经 `esc()`。
 - `computeEffectiveTargets(assets)`：计算含暂存汇入后的有效目标；资产页和分配页都依赖它。
-- `calcOpportunityPlan(selectedTriggers)`：机会补仓检查器纯函数；弹药 = 弹药罐（现金层货币基金）可用市值，单次预算 = min(弹药 30%, 5000)，只显示建议，不写任何数据。`DRAWDOWN_RULES` 只含标普500 / A500 / 中证500 / 纳指100 四只宽基；已从产品表移除的产品不作为补仓对象。
+- `calcDrawdownPlan()`：回撤检查器纯函数；弹药罐 = 投资组合里的现金层（货币基金）可用市值，1 份 = 弹药罐余额 / 3；读 `settings.drawdownInputs[assetId] = { high, price }`，返回每只宽基的跌幅、第几档、份数与金额；`settings.drawdownDone[assetId_pct]` 记录已执行档位，只显示建议，不写任何数据。`DRAWDOWN_RULES` 只含标普500 / A500 / 中证500 / 纳指100 四只宽基。v8.0 已没有「机会补仓检查」，它被回撤检查器取代。
 - `calcAllocation(inputs)`：核心分配引擎。
 - `calcFire(inputs)`：FIRE 测算读取 `totals()` 的当前资产，不写 data；含达成日预测、灵敏度、目标线计算，并支持国内/海外两段月存与首年安家支出。v8.0 另含三种天气（乐观 7% / 普通 5.5% / 悲观 4%）、每年存款增长率、读书基金比例扣除和「外派 N 年后回国」情景。
-- `projectMonthsToTarget(...)` / `projectMonthsToTargetPhased(...)`：月度复利滚动求达成月数；目标随通胀上移，80 年内不可达返回 `reachable:false`。
+- `projectMonthsToTarget(...)` / `projectMonthsToTargetPhased(...)`：月度复利滚动求达成月数；v8.0 用**实际购买力口径**——目标固定为今天的购买力，月存按每年存款增长率（扣除通胀后）抬升，不再让目标随通胀上移；80 年内不可达返回 `reachable:false`。
 - `fireHistorySeries()` / `drawFireChart(...)`：从月度 `monthEndAssets` 取历史净值，纯 SVG 画历史实线 + 预测虚线 + 目标线。
 
 ## 功能与恢复说明
@@ -128,7 +128,7 @@ GitHub 网络偶尔 reset，优先用上面的 HTTP/1.1 push 参数重试。
 - 不引入构建工具、测试框架或前端框架。
 - 不改云同步后端 schema（CF D1 `user_data` 表 / Worker 接口），除非用户明确要求。
 - 不做短视频比例照搬，不改 v8.0 配置为 40/40/20。
-- 不接行情 API，不自动判断回撤，不把机会补仓写入 `entries/invested/plannedInvested/value`。
+- 不接行情 API，不自动判断回撤（回撤检查器只用用户手填的 52 周高点与现价），不把回撤/机会补仓建议写入 `entries/invested/plannedInvested/value`。
 - 不加虚拟币、杠杆、初创股权、买房建议相关逻辑。
 - 不让 `phase/channel` 之类展示字段隐式影响 `calcAllocation`。
 
