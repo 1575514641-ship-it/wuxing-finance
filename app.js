@@ -2224,8 +2224,8 @@ function calcAllocation(inputs) {
 
   // 外派阶段：美元优先买美股（成长+投机），人民币买国内（现金/防御/生财）
   // 层目标也走归一化（任务 1 的兜底），不要写死 35%
-  var usLayerTarget = V8_LAYERS.reduce(function (sum, layer) {
-    return sum + (layer.name === "成长层" || layer.name === "投机层" ? layer.target : 0);
+  var usLayerTarget = items.reduce(function (sum, a) {
+    return a.layer === "成长层" || a.layer === "投机层" ? sum + numberValue(a.target) : sum;
   }, 0);
   var usShare = targetSum > 0 ? usLayerTarget / targetSum : 0;
   var usEntries = pool.filter(function (e) { return e.asset.layer === "成长层" || e.asset.layer === "投机层"; });
