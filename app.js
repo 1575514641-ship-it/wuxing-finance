@@ -2,58 +2,155 @@ const STORAGE_KEY = "wuxing-finance-app-v1";
 const META_KEY = "wuxing-finance-meta-v1";
 const LAST_KIND_KEY = "wuxing-last-entry-kind";
 
-// 22岁外派起步配置（2026-06-07 更新）：
-// 出海前 available 层 52%（A股宽基+黄金+纯债+RMB货基）
-// 出海后 buffered 层解锁后权益约 80%，海外宽基主力标普25%+纳指5%+医疗7%
-// 黄金从10%降到7%（估值过高），矿股从7%降到4%（去杠杆），标普从22%升到25%，纯债从5%升到8%，沪深300升到17%
+// ===== v8.0 唯一配置源（2026-10-06）=====
+// 全站只有这一份「五行 ↔ 层级 ↔ 目标比例 ↔ 产品」对应关系：
+// 资产页、分配页、规则页五行对照表、FIRE 测算都从这里取数，不要在别处写死比例。
+// 比例合计 100%；股票类（生财+成长+投机）约 60%，对应最大回撤约 30%。
+const V8_VERSION = "8.0";
+const V8_LAYERS = [
+  { name: "现金层", label: "现金 / 弹药", element: "水", target: 0.05, cap: null, note: "货币基金；也是弹药罐，只给大跌补仓用" },
+  { name: "防御层", label: "防御", element: "金", target: 0.35, cap: null, note: "黄金 10% + 长债 12.5% + 短债 12.5%" },
+  { name: "生财层", label: "生财", element: "土", target: 0.25, cap: null, note: "A500 12% + 红利低波 8% + 中证500 5%" },
+  { name: "成长层", label: "成长", element: "水", target: 0.30, cap: null, note: "标普500 QDII（看溢价决定场内/场外）" },
+  { name: "投机层", label: "投机", element: "火", target: 0.05, cap: 0.10, note: "纳指100；上限 10%，亏光不补" },
+  { name: "规避层", label: "规避", element: "木", target: 0, cap: 0, note: "杠杆、虚拟币、期权、初创股权（不可配置）" },
+];
+// 产品表：id 沿用 v7 既有 id，保证随手记的历史联动不丢
+const V8_PRODUCTS = [
+  { id: "cash-rmb", layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.05, code: "000198/003474", feePct: 0.20, channel: "场外", buyStatus: "正常", status: "available", note: "余额宝 / 南方天天利B；同时是弹药罐，只给大跌补仓用" },
+  { id: "gold-etf", layer: "防御层", element: "金", name: "黄金ETF", type: "黄金类", target: 0.10, code: "518850", feePct: 0.20, channel: "场内", buyStatus: "正常", status: "available", note: "华夏黄金ETF 518850（默认）；产品表保留可切换博时黄金ETF 159937。黄金不超过总资产 10%" },
+  { id: "bond-midlong", layer: "防御层", element: "金", name: "7-10年国开债", type: "债券类", target: 0.125, code: "003376", feePct: 0.20, channel: "场外", buyStatus: "正常", status: "available", note: "广发中债7-10年国开债指数A；场外买" },
+  { id: "bond-short", layer: "防御层", element: "金", name: "1-3年政金债", type: "债券类", target: 0.125, code: "007364", feePct: 0.20, channel: "场外", buyStatus: "正常", status: "available", note: "易方达中债1-3年政金债A；场外买" },
+  { id: "a500-csi300", layer: "生财层", element: "土", name: "中证A500ETF", type: "宽基指数", target: 0.12, code: "159338", feePct: 0.20, channel: "场内", buyStatus: "正常", status: "available", note: "国泰中证A500ETF；沪深300 已从产品表移除" },
+  { id: "dividend-lowvol", layer: "生财层", element: "土", name: "红利低波ETF", type: "红利类", target: 0.08, code: "512890", feePct: 0.60, channel: "场内", buyStatus: "正常", status: "available", note: "华泰柏瑞红利低波ETF 512890（2026-10-06 核实不换 563020）；产品表保留可切换，代码不要写死" },
+  { id: "csi500", layer: "生财层", element: "土", name: "中证500ETF", type: "中盘成长", target: 0.05, code: "510500", feePct: 0.20, channel: "场内", buyStatus: "正常", status: "available", note: "南方中证500ETF" },
+  { id: "sp500", layer: "成长层", element: "水", name: "标普500 QDII", type: "海外宽基", target: 0.30, code: "513500/003718", feePct: 0.80, channel: "看溢价", buyStatus: "正常", status: "available", note: "场内 博时标普500ETF 513500；场外联接基金；美元现汇份额 易方达标普500 003718" },
+  { id: "nasdaq-tech", layer: "投机层", element: "火", name: "纳斯达克100ETF", type: "科技成长", target: 0.05, code: "159632", feePct: 0.80, channel: "看溢价", buyStatus: "正常", status: "available", note: "华安纳斯达克100ETF；投机层上限 10%，亏光不补" },
+];
+const V8_PRODUCT_BY_ID = V8_PRODUCTS.reduce(function (map, row) { map[row.id] = row; return map; }, {});
+// 罐子：只有「投资组合」参与比例与偏离度计算
+const V8_JARS = [
+  { key: "emergency", name: "🛟 应急罐", desc: "生病、失业、突发情况用，不算投资" },
+  { key: "study", name: "🎓 读书基金（默认关闭）", desc: "出国读研用，只放短债、货币基金、美元存款或美元货币基金" },
+  { key: "waiting", name: "⏳ 等候罐", desc: "QDII 溢价太高、暂时买不进去的钱" },
+  { key: "investment", name: "📈 投资组合", desc: "长期，为 FIRE" },
+];
+const V8_JAR_KEYS = ["emergency", "study", "waiting", "investment"];
+const V8_NON_INVEST_JARS = ["emergency", "study", "waiting"];
+// 罐子资产（不参与组合比例）的固定 id
+const JAR_ASSET_IDS = { emergency: "jar-emergency", study: "jar-study", waiting: "jar-waiting" };
+// 费率预填（管理费 + 托管费，截至 2026 年 9 月，用户可改）
+const V8_FEE_TABLE = {
+  "518850": 0.20, "159937": 0.20, "159338": 0.20, "512890": 0.60, "007364": 0.20,
+  "015826": 0.45, "510500": 0.20, "003376": 0.20, "513500": 0.80, "159632": 0.80,
+};
+// 溢价分级：<1% 全额场内；1~2% 小额；2~3% 半额；3~5% 暂停场内改场外定投；>5% 绝不买场内
+const PREMIUM_TIERS = [
+  { max: 1, key: "full", label: "全额，场内" },
+  { max: 2, key: "small", label: "小额，优先满足本月计划" },
+  { max: 3, key: "half", label: "半额，另一半进等候罐" },
+  { max: 5, key: "offsite", label: "暂停场内，改为场外每日定投或进等候罐" },
+  { max: Infinity, key: "never", label: "绝对不买场内，全部改为场外每日定投（场外限购就进等候罐）" },
+];
+const V8_DEFAULTS = {
+  emergencyGoal: 15000,
+  studyFundEnabled: false,
+  studyFundGoal: 0,
+  studyFundRatio: 25,
+  fxRate: 6.78,
+  minCommission5: true,
+  expatMode: false,
+  savingGrowthPct: 3,
+  usdSubsidy: 1100,
+  daysAbroad: 325,
+  fireAnnualExpense: 90000,
+  fireExpectedReturnPct: 5.5,
+  fireMinRealReturnPct: 3,
+  fireDomesticMonthly: 5000,
+  fireOverseasMonthly: 12500,
+  fireSavingGrowthPct: 3,
+  fireStudyRatioPct: 0,
+};
+const V8_SCHEMA_VERSION = 8;
 const BUFFER_DEFAULT_ID = "cash-rmb";
 const BUFFER_DEFAULT = "货币基金";
-const OPPORTUNITY_BUDGET_CAP = 5000;
 const DRAWDOWN_RULES = [
-  { assetId: "sp500", triggers: [{ pct: 8, units: 1 }, { pct: 15, units: 1 }, { pct: 25, units: 1 }] },
-  { assetId: "a500-csi300", triggers: [{ pct: 10, units: 1 }, { pct: 20, units: 1 }, { pct: 30, units: 1 }] },
-  { assetId: "csi500", triggers: [{ pct: 15, units: 1 }, { pct: 25, units: 1 }, { pct: 35, units: 1 }] },
-  { assetId: "nasdaq-tech", triggers: [{ pct: 15, units: 0.5 }, { pct: 25, units: 0.5 }, { pct: 35, units: 0.5 }] },
-];
-const HALF_FIRE_PLAN = [
-  { id: BUFFER_DEFAULT_ID, layer: "现金层", element: "水", name: "货币基金", type: "RMB流动现金", target: 0.08, status: "available" },
-  { id: "cash-usd", layer: "现金层", element: "水", name: "美元货币工具", type: "USD流动现金", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "gold-etf", layer: "防御层", element: "金", name: "黄金积存/黄金ETF", type: "黄金类", target: 0.07, status: "available" },
-  { id: "dividend-lowvol", layer: "防御层", element: "金", name: "红利低波指数", type: "红利类", target: 0.07, status: "available" },
-  { id: "bond-midlong", layer: "防御层", element: "金", name: "中长期纯债基金", type: "债券类", target: 0.08, status: "available" },
-  { id: "a500-csi300", layer: "生财层", element: "土", name: "沪深300/A500指数", type: "宽基指数", target: 0.17, status: "available" },
-  { id: "csi500", layer: "生财层", element: "土", name: "中证500指数", type: "中盘成长", target: 0.07, status: "available" },
-  { id: "sp500", layer: "成长层", element: "金水", name: "标普500", type: "海外宽基", target: 0.25, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "global-healthcare", layer: "成长层", element: "金水", name: "全球医疗/制药", type: "海外主题", target: 0.07, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "gold-miners", layer: "成长层", element: "金", name: "黄金矿业股", type: "黄金弹性", target: 0.04, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "nasdaq-tech", layer: "投机层", element: "火", name: "纳斯达克100/科技主题", type: "科技成长", target: 0.05, status: "buffered", bufferDestinationId: BUFFER_DEFAULT_ID, bufferDestination: BUFFER_DEFAULT },
-  { id: "speculative-stock", layer: "投机层", element: "火", name: "自选个股/行业ETF", type: "自选投机", target: 0.05, status: "paused:manual" },
+  { assetId: "sp500", name: "标普500", triggers: [{ pct: 8, units: 1 }, { pct: 15, units: 1 }, { pct: 25, units: 1 }] },
+  { assetId: "a500-csi300", name: "A500", triggers: [{ pct: 10, units: 1 }, { pct: 20, units: 1 }, { pct: 30, units: 1 }] },
+  { assetId: "csi500", name: "中证500", triggers: [{ pct: 15, units: 1 }, { pct: 25, units: 1 }, { pct: 35, units: 1 }] },
+  { assetId: "nasdaq-tech", name: "纳指100", triggers: [{ pct: 15, units: 0.5 }, { pct: 25, units: 0.5 }, { pct: 35, units: 0.5 }] },
 ];
 
-const defaultData = {
-  assets: HALF_FIRE_PLAN.map((row) => ({
-    id: row.id || crypto.randomUUID(),
+function makeProductAsset(row) {
+  return {
+    id: row.id,
     layer: row.layer,
     element: row.element,
     name: row.name,
     type: row.type,
     target: row.target,
-    status: row.status,
-    bufferDestinationId: row.bufferDestinationId || "",
-    bufferDestination: row.bufferDestination || "",
+    status: "available",
+    jar: "investment",
+    code: row.code || "",
+    feePct: numberValue(row.feePct),
+    channel: row.channel || "场外",
+    buyStatus: row.buyStatus || "正常",
+    buyStatusChecked: "",
+    valueUsd: 0,
+    waitingSince: "",
+    bufferDestinationId: "",
+    bufferDestination: "",
     value: 0,
     cost: 0,
     updated: "",
-    note: row.id === "speculative-stock"
-      ? "默认冻结；入职第一年不主动买，自选/行业ETF只保留目标占位"
-      : (row.layer === "投机层" && row.name.startsWith("纳斯达克") ? "投机层合计不超过10%；单只+50%卖一半，-30%不补不卖" : ""),
-  })),
+    note: row.note || "",
+  };
+}
+
+function makeJarAsset(jar) {
+  var meta = V8_JARS.find(function (j) { return j.key === jar; }) || { name: jar, desc: "" };
+  return {
+    id: JAR_ASSET_IDS[jar],
+    layer: "罐子",
+    element: "",
+    name: meta.name.replace(/^[^\u4e00-\u9fa5A-Za-z]+/, ""),
+    type: "罐子",
+    target: 0,
+    status: "available",
+    jar: jar,
+    code: "",
+    feePct: 0,
+    channel: "",
+    buyStatus: "正常",
+    buyStatusChecked: "",
+    value: 0,
+    valueUsd: 0,
+    waitingSince: "",
+    bufferDestinationId: "",
+    bufferDestination: "",
+    cost: 0,
+    updated: "",
+    note: meta.desc,
+  };
+}
+
+function makeDefaultSettings() {
+  return Object.assign({}, V8_DEFAULTS, {
+    linkInvestEntry: true,
+    schemaVersion: V8_SCHEMA_VERSION,
+    premiumInputs: {},
+    drawdownInputs: {},
+    drawdownDone: {},
+    tripChecklist: {},
+    studyFundUsd: 0,
+  });
+}
+
+const defaultData = {
+  assets: V8_PRODUCTS.map(makeProductAsset).concat(["emergency", "study", "waiting"].map(makeJarAsset)),
   monthly: makeDefaultMonths(),
   entries: [],
-  settings: {
-    emergencyGoal: 30000,
-    linkInvestEntry: true,
-  },
+  settings: makeDefaultSettings(),
 };
 
 function makeDefaultMonths() {
@@ -93,6 +190,22 @@ let meta = loadMeta();
 let committedData = structuredClone(data);
 let committedMeta = structuredClone(meta);
 let hasCommittedSnapshot = hasInitialStoredData;
+
+// v7 → v8 迁移只执行一次：把升级后的账本立刻落盘，并提示另一台设备也要升级
+(function persistV8Migration() {
+  if (!hasInitialStoredData || storageBlocked) return;
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    var parsed = raw ? JSON.parse(raw) : null;
+    var version = numberValue(parsed && parsed.settings && parsed.settings.schemaVersion);
+    if (version >= V8_SCHEMA_VERSION) return;
+    if (saveData({ sync: false })) {
+      window.__v8MigratedNotice = true;
+    }
+  } catch (error) {
+    console.warn("v8.0 迁移落盘失败，本次仍按 v8.0 结构运行：", error);
+  }
+})();
 
 function fillMissingMonths(source = data) {
   if (!Array.isArray(source.monthly)) source.monthly = [];
@@ -173,8 +286,9 @@ function validateLedgerData(input) {
     if (!Array.isArray(input[key])) fail(key);
   });
   input.assets.forEach((row, index) => fields(row, `assets[${index}]`,
-    ["id", "layer", "element", "name", "type", "status", "bufferDestinationId", "bufferDestination", "updated", "note"],
-    ["target", "value", "cost"]));
+    ["id", "layer", "element", "name", "type", "status", "bufferDestinationId", "bufferDestination", "updated", "note",
+      "jar", "code", "channel", "buyStatus", "buyStatusChecked", "waitingSince"],
+    ["target", "value", "cost", "feePct", "valueUsd"]));
   input.monthly.forEach((row, index) => {
     const path = `monthly[${index}]`;
     fields(row, path, ["id", "month", "note", "allocationMode", "effectiveAllocationMode", "allocationNote", "allocationCreatedAt"],
@@ -190,18 +304,185 @@ function validateLedgerData(input) {
   });
   input.entries.forEach((row, index) => fields(row, `entries[${index}]`,
     ["id", "kind", "date", "target", "channel", "note", "linkedAssetId", "linkedMonth"], ["amount", "linkedAmount"]));
-  if (typeof input.settings !== "undefined") fields(input.settings, "settings", [], ["emergencyGoal"], ["linkInvestEntry"]);
+  if (typeof input.settings !== "undefined") {
+    fields(input.settings, "settings", [],
+      ["emergencyGoal", "studyFundGoal", "studyFundRatio", "studyFundUsd", "fxRate", "savingGrowthPct", "usdSubsidy",
+        "daysAbroad", "fireAnnualExpense", "fireExpectedReturnPct", "fireMinRealReturnPct", "fireDomesticMonthly",
+        "fireOverseasMonthly", "fireSavingGrowthPct", "fireStudyRatioPct", "schemaVersion"],
+      ["linkInvestEntry", "studyFundEnabled", "minCommission5", "expatMode"]);
+    ["premiumInputs", "drawdownInputs", "drawdownDone", "tripChecklist"].forEach((key) => {
+      const value = input.settings[key];
+      if (typeof value === "undefined") return;
+      if (!isRecord(value)) fail(`settings.${key}`);
+    });
+  }
+}
+
+function isPlainRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// v8.0 起唯一设置解析入口：只认已知字段，缺的补默认值，旧值能保留就保留。
+function pickSettings(raw) {
+  const src = isPlainRecord(raw) ? raw : {};
+  const num = (key, fallback) => (Number.isFinite(Number(src[key])) ? Number(src[key]) : fallback);
+  const out = makeDefaultSettings();
+  out.emergencyGoal = numberValue(src.emergencyGoal) > 0 ? numberValue(src.emergencyGoal) : V8_DEFAULTS.emergencyGoal;
+  out.linkInvestEntry = typeof src.linkInvestEntry === "boolean" ? src.linkInvestEntry : true;
+  out.studyFundEnabled = src.studyFundEnabled === true;
+  out.studyFundGoal = Math.max(num("studyFundGoal", 0), 0);
+  out.studyFundRatio = clamp(num("studyFundRatio", V8_DEFAULTS.studyFundRatio), 0, 50);
+  out.studyFundUsd = Math.max(num("studyFundUsd", 0), 0);
+  const fx = num("fxRate", V8_DEFAULTS.fxRate);
+  out.fxRate = fx > 0 ? fx : V8_DEFAULTS.fxRate;
+  out.minCommission5 = src.minCommission5 !== false;
+  out.expatMode = src.expatMode === true;
+  out.savingGrowthPct = num("savingGrowthPct", V8_DEFAULTS.savingGrowthPct);
+  out.usdSubsidy = Math.max(num("usdSubsidy", V8_DEFAULTS.usdSubsidy), 0);
+  out.daysAbroad = clamp(num("daysAbroad", V8_DEFAULTS.daysAbroad), 0, 366);
+  out.fireAnnualExpense = Math.max(num("fireAnnualExpense", V8_DEFAULTS.fireAnnualExpense), 0);
+  out.fireExpectedReturnPct = num("fireExpectedReturnPct", V8_DEFAULTS.fireExpectedReturnPct);
+  out.fireMinRealReturnPct = num("fireMinRealReturnPct", V8_DEFAULTS.fireMinRealReturnPct);
+  out.fireDomesticMonthly = Math.max(num("fireDomesticMonthly", V8_DEFAULTS.fireDomesticMonthly), 0);
+  out.fireOverseasMonthly = Math.max(num("fireOverseasMonthly", V8_DEFAULTS.fireOverseasMonthly), 0);
+  out.fireSavingGrowthPct = num("fireSavingGrowthPct", V8_DEFAULTS.fireSavingGrowthPct);
+  out.fireStudyRatioPct = clamp(num("fireStudyRatioPct", V8_DEFAULTS.fireStudyRatioPct), 0, 50);
+  out.premiumInputs = isPlainRecord(src.premiumInputs) ? Object.assign({}, src.premiumInputs) : {};
+  out.drawdownInputs = isPlainRecord(src.drawdownInputs) ? Object.assign({}, src.drawdownInputs) : {};
+  out.drawdownDone = isPlainRecord(src.drawdownDone) ? Object.assign({}, src.drawdownDone) : {};
+  out.tripChecklist = isPlainRecord(src.tripChecklist) ? Object.assign({}, src.tripChecklist) : {};
+  out.schemaVersion = V8_SCHEMA_VERSION;
+  return out;
+}
+
+// v7.x → v8.0 迁移：只跑一次（settings.schemaVersion 标记）。
+// 铁律：金额、流水、月度复盘、FIRE 参数、同步码一条都不丢；产品按 id 就地升级，随手记的历史联动不断。
+const V7_REMOVED_PRODUCTS = {
+  "cash-usd": { mergeInto: "cash-rmb", note: "v8.0 已并入现金/弹药（货币基金）" },
+  "global-healthcare": { note: "v8.0 已移除（标普医疗 161126 长期暂停申购）" },
+  "gold-miners": { note: "v8.0 已移除（黄金矿股）" },
+  "speculative-stock": { note: "v8.0 已移除（自选个股 5% 占位）" },
+};
+
+function migrateToV8(input) {
+  const source = isPlainRecord(input) ? input : {};
+  // 幂等：已经是 v8 结构就直接返回，避免重复插入罐子资产
+  if (numberValue(source.settings && source.settings.schemaVersion) >= V8_SCHEMA_VERSION) return source;
+  const oldAssets = Array.isArray(source.assets) ? source.assets : [];
+  const oldSettings = isPlainRecord(source.settings) ? source.settings : {};
+  const oldGoal = numberValue(oldSettings.emergencyGoal);
+  // 旧默认 3 万 → 新默认 1.5 万；用户手动改过的其他正数值原样保留
+  const newGoal = oldGoal > 0 && oldGoal !== 30000 ? oldGoal : V8_DEFAULTS.emergencyGoal;
+  const usedIds = {};
+  const migrated = [];
+
+  V8_PRODUCTS.forEach(function (row) {
+    const old = oldAssets.find(function (a) { return a && a.id === row.id; }) ||
+      oldAssets.find(function (a) { return a && !usedIds[a.id] && String(a.name || "") === row.name; });
+    if (old) usedIds[old.id] = true;
+    const base = makeProductAsset(row);
+    migrated.push(old ? Object.assign({}, old, {
+      layer: row.layer,
+      element: row.element,
+      name: row.name,
+      type: row.type,
+      target: row.target,
+      status: "available",
+      jar: "investment",
+      code: base.code,
+      feePct: base.feePct,
+      channel: base.channel,
+      buyStatus: base.buyStatus,
+      buyStatusChecked: base.buyStatusChecked,
+      valueUsd: 0,
+      bufferDestinationId: "",
+      bufferDestination: "",
+      note: row.note || old.note || "",
+    }) : base);
+  });
+
+  oldAssets.forEach(function (a) {
+    if (!a || usedIds[a.id]) return;
+    const removed = V7_REMOVED_PRODUCTS[a.id];
+    if (removed && removed.mergeInto) {
+      const target = migrated.find(function (m) { return m.id === removed.mergeInto; });
+      if (target) {
+        target.value = numberValue(target.value) + numberValue(a.value);
+        target.cost = numberValue(target.cost) + numberValue(a.cost);
+        target.note = (target.note ? target.note + "｜" : "") + removed.note;
+      }
+      return;
+    }
+    if (removed) {
+      if (numberValue(a.value) === 0 && numberValue(a.cost) === 0) return; // 无持仓：直接删除
+      migrated.push(Object.assign({}, a, {
+        target: 0,
+        status: "available",
+        jar: "investment",
+        bufferDestinationId: "",
+        bufferDestination: "",
+        note: (a.note ? a.note + "｜" : "") + removed.note + "，请清仓后删除",
+      }));
+      return;
+    }
+    // 用户自建资产：原样保留（目标占比不换算；合计不等于 100% 时页面顶部会提示）
+    migrated.push(Object.assign({}, a, {
+      jar: "investment",
+      status: isBufferedStatus(a.status) ? "available" : (a.status || "available"),
+      bufferDestinationId: "",
+      bufferDestination: "",
+      note: (a.note ? a.note + "｜" : "") + "v8.0 迁移保留，请确认目标比例",
+    }));
+  });
+
+  // 旧「现金层」既是应急金又是弹药 → 拆开：应急罐最多拿新目标，其余留在现金/弹药
+  const cash = migrated.find(function (a) { return a.id === "cash-rmb"; });
+  const emergency = makeJarAsset("emergency");
+  if (cash) {
+    const cashValue = numberValue(cash.value);
+    const cashCost = numberValue(cash.cost);
+    emergency.value = Math.min(cashValue, newGoal);
+    emergency.cost = Math.min(cashCost, emergency.value);
+    emergency.updated = cash.updated || "";
+    cash.value = Math.max(cashValue - emergency.value, 0);
+    cash.cost = Math.max(cashCost - emergency.cost, 0);
+  }
+  const study = makeJarAsset("study");
+  study.value = Math.max(numberValue(oldSettings.studyFundValue), 0);
+  study.valueUsd = Math.max(numberValue(oldSettings.studyFundUsd), 0);
+  const waiting = makeJarAsset("waiting");
+  waiting.value = Math.max(numberValue(oldSettings.waitingValue), 0);
+  waiting.valueUsd = Math.max(numberValue(oldSettings.waitingUsd), 0);
+  waiting.waitingSince = String(oldSettings.waitingSince || "");
+
+  return {
+    assets: migrated.concat([emergency, study, waiting]),
+    monthly: Array.isArray(source.monthly) ? source.monthly : [],
+    entries: Array.isArray(source.entries) ? source.entries : [],
+    settings: pickSettings(Object.assign({}, oldSettings, { emergencyGoal: newGoal })),
+  };
 }
 
 function normalizeData(input) {
   const fallback = structuredClone(defaultData);
-  const source = input && typeof input === "object" ? input : {};
-  const assets = Array.isArray(source.assets) ? source.assets : fallback.assets;
+  const source = isPlainRecord(input) ? input : {};
+  const version = numberValue(source.settings && source.settings.schemaVersion);
+  const working = version >= V8_SCHEMA_VERSION ? source : migrateToV8(source);
+  const assets = Array.isArray(working.assets) ? working.assets : fallback.assets;
   assets.forEach((a) => {
     if (a && typeof a === "object") {
       if (!a.id) a.id = crypto.randomUUID();
       if (typeof a.element === "undefined") a.element = "";
       if (typeof a.status === "undefined") a.status = "available";
+      if (typeof a.jar === "undefined" || V8_JAR_KEYS.indexOf(String(a.jar)) === -1) a.jar = "investment";
+      const preset = V8_PRODUCT_BY_ID[a.id] || {};
+      if (typeof a.code === "undefined") a.code = preset.code || "";
+      if (typeof a.feePct === "undefined") a.feePct = numberValue(preset.feePct);
+      if (typeof a.channel === "undefined") a.channel = preset.channel || "";
+      if (typeof a.buyStatus === "undefined") a.buyStatus = "正常";
+      if (typeof a.buyStatusChecked === "undefined") a.buyStatusChecked = "";
+      if (typeof a.valueUsd === "undefined") a.valueUsd = 0;
+      if (typeof a.waitingSince === "undefined") a.waitingSince = "";
       if (a.id === "speculative-stock" && isBufferedStatus(a.status)) {
         a.status = "paused:manual";
         a.bufferDestinationId = "";
@@ -212,17 +493,15 @@ function normalizeData(input) {
       if (typeof a.bufferDestination === "undefined") a.bufferDestination = "";
     }
   });
+  ["emergency", "study", "waiting"].forEach(function (jar) {
+    if (!assets.some(function (a) { return a && a.jar === jar; })) assets.push(makeJarAsset(jar));
+  });
   syncBufferDestinations(assets);
-  const srcSettings = source.settings && typeof source.settings === "object" ? source.settings : {};
-  const oldEmergencyGoal = numberValue(srcSettings.emergencyGoal);
   return {
     assets,
-    monthly: Array.isArray(source.monthly) ? source.monthly : fallback.monthly,
-    entries: Array.isArray(source.entries) ? source.entries : fallback.entries,
-    settings: {
-      emergencyGoal: oldEmergencyGoal > 0 ? oldEmergencyGoal : fallback.settings.emergencyGoal,
-      linkInvestEntry: typeof srcSettings.linkInvestEntry === "boolean" ? srcSettings.linkInvestEntry : true,
-    },
+    monthly: Array.isArray(working.monthly) ? working.monthly : fallback.monthly,
+    entries: Array.isArray(working.entries) ? working.entries : fallback.entries,
+    settings: pickSettings(isPlainRecord(working.settings) ? working.settings : {}),
   };
 }
 
@@ -232,6 +511,102 @@ function isBufferedStatus(status) {
 
 function isAvailableAsset(asset) {
   return asset && !isBufferedStatus(asset.status) && String(asset.status || "available") !== "paused:manual";
+}
+
+// ---- v8.0 罐子：只有「投资组合」参与比例、偏离度与分配计算 ----
+function assetJar(asset) {
+  var jar = String((asset && asset.jar) || "investment");
+  return V8_JAR_KEYS.indexOf(jar) === -1 ? "investment" : jar;
+}
+
+function isInvestmentAsset(asset) {
+  return assetJar(asset) === "investment";
+}
+
+function investmentAssets(list) {
+  var source = Array.isArray(list) ? list : data.assets;
+  return source.filter(isInvestmentAsset);
+}
+
+function jarAssets(jar, list) {
+  var source = Array.isArray(list) ? list : data.assets;
+  return source.filter(function (a) { return assetJar(a) === jar; });
+}
+
+function fxRate() {
+  var rate = numberValue(data.settings && data.settings.fxRate);
+  return rate > 0 ? rate : V8_DEFAULTS.fxRate;
+}
+
+function jarValueRmb(jar, list) {
+  return jarAssets(jar, list).reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+}
+
+function jarValueUsd(jar, list) {
+  return jarAssets(jar, list).reduce(function (s, a) { return s + numberValue(a.valueUsd); }, 0);
+}
+
+function jarValue(jar, list) {
+  return jarValueRmb(jar, list) + jarValueUsd(jar, list) * fxRate();
+}
+
+function emergencyGoal() {
+  var goal = numberValue(data.settings && data.settings.emergencyGoal);
+  return goal > 0 ? goal : V8_DEFAULTS.emergencyGoal;
+}
+
+function emergencyValue() {
+  return jarValue("emergency");
+}
+
+function studyFundEnabled() {
+  return Boolean(data.settings && data.settings.studyFundEnabled);
+}
+
+function studyFundGoal() {
+  return Math.max(numberValue(data.settings && data.settings.studyFundGoal), 0);
+}
+
+function studyFundRatioPct() {
+  var ratio = numberValue(data.settings && data.settings.studyFundRatio);
+  return Number.isFinite(ratio) ? clamp(ratio, 0, 50) : V8_DEFAULTS.studyFundRatio;
+}
+
+function waitingMonths() {
+  var jar = jarAssets("waiting")[0];
+  var since = String((jar && jar.waitingSince) || "");
+  var parts = since.split("/").map(Number);
+  if (!parts[0] || !parts[1]) return 0;
+  var now = new Date();
+  return Math.max((now.getFullYear() - parts[0]) * 12 + (now.getMonth() + 1 - parts[1]), 0);
+}
+
+function portfolioValue() {
+  return investmentAssets().reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+}
+
+function targetSumOf(list) {
+  var source = Array.isArray(list) ? list : investmentAssets();
+  return source.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
+}
+
+// 比例自动检查（任务 1）：合计 ≠100% 只提醒不阻断，计算继续按归一化
+function validateTargetSum(list) {
+  var source = Array.isArray(list) ? list : investmentAssets();
+  var sum = targetSumOf(source);
+  var issues = [];
+  if (Math.abs(sum - 1) > 0.0005) {
+    issues.push("配置比例合计为 " + pct(sum) + "，系统已按合计归一化；建议调整为 100%");
+  }
+  V8_LAYERS.forEach(function (layer) {
+    var rows = source.filter(function (a) { return a.layer === layer.name; });
+    if (!rows.length) return;
+    var layerSum = rows.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
+    if (Math.abs(layerSum - layer.target) > 0.0005) {
+      issues.push(layer.label + "层子目标合计 " + pct(layerSum) + "，与层目标 " + pct(layer.target) + " 不一致");
+    }
+  });
+  return { sum: sum, issues: issues, ok: issues.length === 0 };
 }
 
 function syncBufferDestinations(assets) {
@@ -258,30 +633,32 @@ function resolveBufferDestination(asset, products) {
 }
 
 function computeEffectiveTargets(assets) {
-  var targetSum = assets.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
-  var totalAssets = assets.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
-  var speculativeValue = assets.reduce(function (s, a) {
+  // 罐子（应急/读书/等候）不参与比例与偏离度计算
+  var list = (Array.isArray(assets) ? assets : data.assets).filter(isInvestmentAsset);
+  var targetSum = list.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
+  var totalAssets = list.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  var speculativeValue = list.reduce(function (s, a) {
     return a.layer === "投机层" ? s + numberValue(a.value) : s;
   }, 0);
   var speculativePaused = totalAssets > 0 ? speculativeValue / totalAssets >= 0.10 : false;
   var result = {};
 
-  assets.forEach(function (asset) {
+  list.forEach(function (asset) {
     result[asset.id] = targetSum > 0 ? numberValue(asset.target) / targetSum : 0;
   });
 
-  assets.forEach(function (asset) {
+  list.forEach(function (asset) {
     if (!isBufferedStatus(asset.status) || (speculativePaused && asset.layer === "投机层")) return;
     var normTarget = targetSum > 0 ? numberValue(asset.target) / targetSum : 0;
     var dest = null;
     if (asset.bufferDestinationId) {
-      dest = assets.find(function (a) { return a.id === asset.bufferDestinationId && a.id !== asset.id; });
+      dest = list.find(function (a) { return a.id === asset.bufferDestinationId && a.id !== asset.id; });
     }
     if (!dest && asset.bufferDestination) {
-      dest = assets.find(function (a) { return a.name === asset.bufferDestination && a.id !== asset.id; });
+      dest = list.find(function (a) { return a.name === asset.bufferDestination && a.id !== asset.id; });
     }
     if (!dest) {
-      dest = assets.find(function (a) { return a.id === BUFFER_DEFAULT_ID && a.id !== asset.id; }) || assets.find(function (a) { return a.name === BUFFER_DEFAULT && a.id !== asset.id; });
+      dest = list.find(function (a) { return a.id === BUFFER_DEFAULT_ID && a.id !== asset.id; }) || list.find(function (a) { return a.name === BUFFER_DEFAULT && a.id !== asset.id; });
     }
     if (dest && isAvailableAsset(dest)) {
       result[dest.id] = numberValue(result[dest.id]) + normTarget;
@@ -637,17 +1014,20 @@ function hasMeaningfulData(source) {
 }
 
 function totals() {
-  const value = data.assets.reduce((sum, item) => sum + numberValue(item.value), 0);
-  const cost = data.assets.reduce((sum, item) => sum + numberValue(item.cost), 0);
+  // 投资组合口径：比例、偏离度、投机层上限都只用这一份
+  const list = investmentAssets();
+  const value = list.reduce((sum, item) => sum + numberValue(item.value), 0);
+  const cost = list.reduce((sum, item) => sum + numberValue(item.cost), 0);
   const profit = value - cost;
-  const spec = data.assets
+  const spec = list
     .filter((item) => item.layer === "投机层")
     .reduce((sum, item) => sum + numberValue(item.value), 0);
-  const last = data.assets
+  const last = list
     .map((item) => item.updated)
     .filter(Boolean)
     .sort()
     .at(-1);
+  const jarTotal = jarValue("emergency") + jarValue("study") + jarValue("waiting");
   return {
     value,
     cost,
@@ -655,6 +1035,8 @@ function totals() {
     profitRate: cost > 0 ? profit / cost : 0,
     specRatio: value > 0 ? spec / value : 0,
     last,
+    jarTotal,
+    grandTotal: value + jarTotal,
   };
 }
 
@@ -691,6 +1073,8 @@ function render() {
     renderDashboard();
     renderTodayActions();
     renderAssets();
+    renderTargetWarning();
+    renderTripChecklist();
     renderAllocate();
     renderFire();
     renderMonthly();
@@ -709,74 +1093,134 @@ function render() {
 
 function renderDashboard() {
   const t = totals();
-  document.querySelector("#totalAssets").textContent = money(t.value);
+  document.querySelector("#totalAssets").textContent = money(t.grandTotal);
   document.querySelector("#totalCost").textContent = money(t.cost);
   document.querySelector("#totalProfit").textContent = money(t.profit);
   document.querySelector("#profitRate").textContent = pct(t.profitRate);
   document.querySelector("#specRatio").textContent = pct(t.specRatio);
   const overLimit = t.specRatio >= 0.1;
-  document.querySelector("#specStatus").textContent = overLimit ? "达10%，暂停科技/个股" : "正常";
+  document.querySelector("#specStatus").textContent = overLimit ? "达10%，卖回10%" : "正常";
   const specCard = document.querySelector("#specRatio").closest(".metric");
   specCard.classList.toggle("alert", overLimit);
-  document.querySelector("#lastUpdated").textContent = t.last ? `最近更新：${t.last}` : "尚未更新";
+  document.querySelector("#lastUpdated").textContent =
+    `投资组合 ${money(t.value)}｜罐子 ${money(t.jarTotal)}` + (t.last ? `｜最近更新：${t.last}` : "｜尚未更新");
+}
+
+// 比例自动检查（任务 1）：合计或子目标不等于目标时，页面顶部黄条提醒；计算仍按归一化继续
+function renderTargetWarning() {
+  var el = document.querySelector("#targetWarning");
+  if (!el) return;
+  var check = validateTargetSum();
+  if (check.ok) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = '<b>配置比例需要确认</b>' +
+    check.issues.map(function (text) { return "<span>" + esc(text) + "</span>"; }).join("");
+}
+
+// 四个罐子卡片（任务 2）：应急罐 / 读书基金（默认关闭）/ 等候罐 / 投资组合
+function jarCardHtml(name, value, goal, desc, extra) {
+  var progress = goal > 0 ? Math.min(value / goal, 1) : 0;
+  var bar = goal > 0
+    ? '<div class="jar-progress"><i class="jar-fill" style="width:' + (progress * 100).toFixed(1) + '%"></i></div>'
+    : "";
+  var goalText = goal > 0 ? money(value) + " / " + money(goal) : money(value);
+  return '<article class="jar-card">' +
+    '<div class="jar-card-head"><b>' + esc(name) + '</b>' + (goal > 0 ? '<span>' + pct(progress) + '</span>' : "") + '</div>' +
+    '<div class="jar-card-usd">' + goalText + '</div>' +
+    bar +
+    '<div class="jar-card-note">' + esc(desc) + (extra ? "｜" + esc(extra) : "") + '</div>' +
+  '</article>';
+}
+
+function renderJars() {
+  var wrap = document.querySelector("#jarCards");
+  if (!wrap) return;
+  var goal = emergencyGoal();
+  var cards = [];
+  cards.push(jarCardHtml("🛟 应急罐", jarValue("emergency"), goal, "生病、失业、突发情况用，不算投资", ""));
+  if (studyFundEnabled()) {
+    var usd = jarValueUsd("study");
+    var extra = usd > 0 ? "其中 " + money(usd * fxRate()) + " 来自美元" : "";
+    cards.push(jarCardHtml("🎓 读书基金", jarValue("study"), studyFundGoal(), "出国读研用，只放短债、货币基金、美元存款或美元货币基金", extra));
+  }
+  var waitUsd = jarValueUsd("waiting");
+  var waitExtra = [];
+  if (jarValue("waiting") > 0) waitExtra.push("已等待 " + waitingMonths() + " 个月");
+  if (waitUsd > 0) waitExtra.push("其中 " + money(waitUsd * fxRate()) + " 来自美元");
+  cards.push(jarCardHtml("⏳ 等候罐", jarValue("waiting"), 0, "QDII 溢价太高、暂时买不进去的钱", waitExtra.join("｜")));
+  cards.push(jarCardHtml("📈 投资组合", portfolioValue(), 0, "长期，为 FIRE；按 v8.0 比例分配", ""));
+  wrap.innerHTML = cards.join("");
 }
 
 function renderAssets() {
   const list = document.querySelector("#assetList");
+  renderJars();
+  renderTargetWarning();
   const t = totals();
-  const targetSum = data.assets.reduce((sum, item) => sum + numberValue(item.target), 0);
-  const effectiveTargets = computeEffectiveTargets(data.assets);
+  const items = investmentAssets();
+  const targetSum = targetSumOf(items);
+  const effectiveTargets = computeEffectiveTargets(items);
   list.innerHTML = "";
 
-  if (!data.assets.length) {
+  if (!items.length) {
     list.innerHTML = '<div class="empty-state">' +
       '<div class="empty-icon">📊</div>' +
       '<b>还没有资产</b>' +
-      '<p>点「套用22岁外派配置」一键导入推荐方案，或手动新增资产。</p>' +
+      '<p>点「套用 v8.0 配置」一键导入推荐方案，或手动新增资产。</p>' +
       '</div>';
     return;
   }
 
-  data.assets.forEach((item) => {
+  items.forEach((item) => {
     const profit = numberValue(item.value) - numberValue(item.cost);
     const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
     const normTarget = targetSum > 0 ? numberValue(item.target) / targetSum : 0;
     const effectiveTarget = numberValue(effectiveTargets[item.id]);
     const hasEffectiveIncoming = effectiveTarget > normTarget + 0.0001;
     const status = ratio - normTarget;
-    const statusText = status > 0.05 ? "偏高：暂停/少投" : status < -0.05 ? "偏低：优先补" : "正常";
+    const statusText = status > 0.03 ? "偏高：暂停/少投" : status < -0.03 ? "偏低：优先补" : "正常";
     const isBuffered = isBufferedStatus(item.status);
+    const buyStatus = String(item.buyStatus || "正常");
+    const suspended = buyStatus === "暂停申购";
     const bufferDest = data.assets.find((a) => a.id === item.bufferDestinationId) || data.assets.find((a) => a.name === item.bufferDestination);
     const bufferBadge = isBuffered
       ? '<i class="badge fire">暂存→' + esc((bufferDest && bufferDest.name) || item.bufferDestination || BUFFER_DEFAULT) + "</i> "
       : "";
+    const buyBadge = buyStatus === "正常" ? "" : '<i class="badge fire">' + esc(buyStatus) + "</i> ";
     const targetLine = hasEffectiveIncoming ? `<small class="effective-target">含暂存后 ${pct(effectiveTarget)}</small>` : "";
+    const productLine = [item.code ? "代码 " + item.code : "", item.feePct ? "年费率 " + item.feePct + "%" : "",
+      item.channel ? "在哪买 " + item.channel : "", item.buyStatusChecked ? "上次检查 " + item.buyStatusChecked : ""]
+      .filter(Boolean).join(" · ");
     const card = document.createElement("article");
-    card.className = "card" + (isBuffered ? " buffered" : "");
+    card.className = "card" + (isBuffered ? " buffered" : "") + (suspended ? " suspended" : "");
     card.innerHTML = `
       <div class="card-title">
         <b>${esc(item.name)}</b>
-        <span>${bufferBadge}<i class="badge ${layerClass(item.element)}">${esc(item.layer)}｜${esc(item.element)}</i> ${esc(item.type)}</span>
+        <span>${bufferBadge}${buyBadge}<i class="badge ${layerClass(item.element)}">${esc(item.layer)}｜${esc(item.element)}</i> ${esc(item.type)}</span>
       </div>
       <div class="num"><span class="mini-label">当前市值</span><b>${money(item.value)}</b></div>
       <div class="num"><span class="mini-label">累计投入</span><b>${money(item.cost)}</b></div>
       <div class="num"><span class="mini-label">盈亏</span><b>${money(profit)}</b></div>
-      <div class="num"><span class="mini-label">占比/目标</span><b>${pct(ratio)} / ${pct(normTarget)}</b>${targetLine}</div>
+      <div class="num"><span class="mini-label">占比/目标</span><b>${pct(ratio)} / ${pct(normTarget)}</b><small>${esc(statusText)}</small>${targetLine}</div>
+      ${productLine ? `<small class="prod-meta">${esc(productLine)}</small>` : ""}
     `;
     card.addEventListener("click", () => openAssetEditor(item.id));
     list.appendChild(card);
   });
 
   const tips = document.querySelector("#rebalanceTips");
-  const issues = data.assets
+  const issues = items
     .map((item) => {
       const ratio = t.value > 0 ? numberValue(item.value) / t.value : 0;
       const normTarget = targetSum > 0 ? numberValue(item.target) / targetSum : 0;
       const gapTarget = numberValue(effectiveTargets[item.id]) || normTarget;
       const gap = ratio - gapTarget;
-      if (gap > 0.05) return `${esc(item.name)} 偏高 ${pct(gap)}，下月少投。`;
-      if (gap < -0.05) {
-        // 建议补仓金额：把该资产补到目标占比所需买入额
+      if (gap > 0.03) return `${esc(item.name)} 偏高 ${pct(gap)}，暂停新增。`;
+      if (gap < -0.03) {
         var suggestAmt = t.value > 0 ? Math.round((gapTarget - ratio) * t.value) : 0;
         return `${esc(item.name)} 偏低 ${pct(Math.abs(gap))}，建议补 ${suggestAmt > 0 ? money(suggestAmt) : "—"}。`;
       }
@@ -848,8 +1292,8 @@ function renderMonthlyChecklist() {
   var hasPlan = hasAllocationPlan(month);
   var investedDone = numberValue(month && month.invested) > 0;
   var monthEndDone = numberValue(month && month.monthEndAssets) > 0;
-  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
-  var emergencyDone = cashLayerValue() >= goal;
+  var goal = emergencyGoal();
+  var emergencyDone = emergencyValue() >= goal;
   var items = [
     { label: "本月计划是否保存", done: hasPlan, note: hasPlan ? "已保存" : "未保存" },
     { label: "实际投入是否记录", done: investedDone, note: investedDone ? "已记录" : "买入后再记" },
@@ -871,11 +1315,9 @@ function renderMonthlyChecklist() {
 function renderEmergencyBar() {
   var el = document.querySelector("#emergencyBar");
   if (!el) return;
-  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
-  // 应急金 = 现金层资产市值之和（货币基金）
-  var cashValue = data.assets
-    .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
-    .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  var goal = emergencyGoal();
+  // v8.0：应急罐是独立罐子，不再等于现金层；现金层只是投资组合里的弹药
+  var cashValue = emergencyValue();
   var progress = goal > 0 ? Math.min(cashValue / goal, 1) : 0;
   var reached = cashValue >= goal;
   var barEl = el.querySelector(".emergency-bar-fill");
@@ -884,17 +1326,17 @@ function renderEmergencyBar() {
   if (barEl) barEl.style.width = (progress * 100).toFixed(1) + "%";
   if (barEl) barEl.className = "emergency-bar-fill" + (reached ? " reached" : "");
   if (textEl) textEl.textContent = reached
-    ? "应急金已达标 ✓"
-    : "应急金 " + money(cashValue) + " / " + money(goal);
+    ? "应急罐已满 ✓"
+    : "应急罐 " + money(cashValue) + " / " + money(goal);
   if (subEl) subEl.textContent = reached
-    ? "出国前 3 万已达标；海外稳定后可手动降到 2-2.5 万"
-    : "出国前优先补到 3 万，应对入职安顿、证件体检和临时回国";
+    ? "应急罐已满，本月可投金额开始进投资组合"
+    : "应急罐没满：本月可投金额先补应急罐，其他步骤跳过";
   // 目标可点击编辑
   var editEl = el.querySelector(".emergency-edit");
   if (editEl) {
     editEl.textContent = "目标 " + money(goal);
     editEl.onclick = function () {
-      var input = prompt("设置应急金目标金额（元）", goal);
+      var input = prompt("设置应急罐目标金额（元）", goal);
       var val = parseFloat(input);
       if (!isNaN(val) && val > 0) {
         if (!data.settings) data.settings = {};
@@ -1016,6 +1458,13 @@ function fireMoney(value) {
   return Math.round(numberValue(value) / 10000).toLocaleString("zh-CN") + " 万";
 }
 
+// 名义收益率 → 实际收益率（模型统一用实际口径：目标固定为「今天的购买力」）
+function realRateFromNominal(nominalPct, inflationPct) {
+  var nominal = clamp(numberValue(nominalPct) / 100, 0, 1);
+  var inflation = clamp(numberValue(inflationPct) / 100, 0, 1);
+  return (1 + nominal) / (1 + inflation) - 1;
+}
+
 function calcFire(inputs) {
   var annualExpense = max0(numberValue(inputs.annualExpense));
   var supplementIncome = max0(numberValue(inputs.supplementIncome));
@@ -1028,54 +1477,78 @@ function calcFire(inputs) {
   var domesticMonths = Math.round(max0(numberValue(inputs.domesticMonths)));
   var overseasMonthly = max0(numberValue(inputs.overseasMonthly));
   var firstYearSetupCost = max0(numberValue(inputs.firstYearSetupCost));
+  var savingGrowthPct = numberValue(inputs.savingGrowthPct);
+  var studyRatioPct = clamp(numberValue(inputs.studyRatioPct), 0, 50);
+  var usdSubsidy = max0(numberValue(inputs.usdSubsidy));
+  var fxRateInput = numberValue(inputs.fxRate) > 0 ? numberValue(inputs.fxRate) : fxRate();
+  var daysAbroad = clamp(numberValue(inputs.daysAbroad), 0, 366);
+  var returnHome = Boolean(inputs.returnHome);
+  var returnYears = max0(numberValue(inputs.returnYears));
+  // 美元补贴：年补贴 = 月补贴 × 12 × 天数 / 365（每年约 40 天假期没有补贴）
+  var subsidyAnnualUsd = usdSubsidy * 12 * daysAbroad / 365;
+  var subsidyAnnualRmb = subsidyAnnualUsd * fxRateInput;
   var netAnnualExpense = Math.max(annualExpense - supplementIncome, 0);
   var nominalFactor = Math.pow(1 + inflationRate, years);
   var rates = [primaryRate, 0.035, 0.03];
   var lines = rates.map(function (rate) {
     var today = rate > 0 ? netAnnualExpense / rate : 0;
-    return {
-      rate: rate,
-      today: today,
-      nominal: today * nominalFactor,
-    };
+    return { rate: rate, today: today, nominal: today * nominalFactor };
   });
   var total = totals().value;
   var progress = lines[0].today > 0 ? total / lines[0].today : 0;
 
-  // ---- 达成日预测：用名义收益率把"当前净值 + 每月定投"滚到随通胀上移的目标 ----
-  // 目标用 3.5% 稳健线的今天口径本金，滚动函数内部逐月加通胀。
-  var targetNominal = lines[1].nominal;
-  var monthlyContribution = max0(numberValue(inputs.monthlyContribution));
-  var phasedMonthlyContribution = calcPhasedMonthlyContribution(domesticMonthly, domesticMonths, overseasMonthly, firstYearSetupCost, years);
-  var expectedAnnual = clamp(numberValue(inputs.expectedReturnPct) / 100, 0, 1);
-  var monthlyRate = Math.pow(1 + expectedAnnual, 1 / 12) - 1;
-  var projection = projectMonthsToTargetPhased(total, {
+  var plan = {
     domesticMonthly: domesticMonthly,
     domesticMonths: domesticMonths,
     overseasMonthly: overseasMonthly,
     firstYearSetupCost: firstYearSetupCost,
-    fallbackMonthly: monthlyContribution,
-  }, monthlyRate, lines[1].today, inflationRate);
+    fallbackMonthly: max0(numberValue(inputs.monthlyContribution)),
+    savingGrowthPct: savingGrowthPct,
+    studyRatioPct: studyRatioPct,
+    returnHome: returnHome,
+    returnYears: returnYears,
+  };
+  var expectedAnnual = clamp(numberValue(inputs.expectedReturnPct) / 100, 0, 1);
+  var realAnnual = realRateFromNominal(inputs.expectedReturnPct, inputs.inflationRatePct);
+  var monthlyRate = Math.pow(1 + Math.max(realAnnual, 0), 1 / 12) - 1;
+  var targetToday = lines[1].today;
+  var projection = projectMonthsToTargetPhased(total, plan, monthlyRate, targetToday, inflationRate);
+  var phasedMonthlyContribution = calcPhasedMonthlyContribution(domesticMonthly, domesticMonths, overseasMonthly, firstYearSetupCost, years, plan);
 
-  // ---- 灵敏度：每月多投 1000 / 收益率 +1% 各能提前多少个月 ----
+  // 三种天气：乐观 7% / 普通 5.5% / 悲观 4%（名义），同样折算成实际收益率后滚动
+  var weather = [
+    { key: "optimistic", label: "乐观", ratePct: 7 },
+    { key: "normal", label: "普通", ratePct: 5.5 },
+    { key: "pessimistic", label: "悲观", ratePct: 4 },
+  ].map(function (w) {
+    var real = realRateFromNominal(w.ratePct, inputs.inflationRatePct);
+    var rate = Math.pow(1 + Math.max(real, 0), 1 / 12) - 1;
+    var proj = projectMonthsToTargetPhased(total, plan, rate, targetToday, inflationRate);
+    return {
+      key: w.key,
+      label: w.label,
+      ratePct: w.ratePct,
+      realRatePct: real * 100,
+      reachable: proj.reachable,
+      months: proj.months,
+      age: proj.reachable && Number.isFinite(proj.months) ? Math.round((currentAge + proj.months / 12) * 10) / 10 : null,
+      etaLabel: proj.reachable ? monthsToDateLabel(proj.months) : "超 80 年",
+      human: proj.reachable ? monthsToHuman(proj.months) : "超 80 年",
+    };
+  });
+
   var sensitivity = null;
   if (projection.reachable) {
     var basMonths = projection.months;
-    var plusContribRate = Math.pow(1 + expectedAnnual, 1 / 12) - 1;
-    var pc = projectMonthsToTargetPhased(total, {
+    var plusPlan = Object.assign({}, plan, {
       domesticMonthly: domesticMonthly + 1000,
-      domesticMonths: domesticMonths,
       overseasMonthly: overseasMonthly + 1000,
-      firstYearSetupCost: firstYearSetupCost,
-      fallbackMonthly: monthlyContribution + 1000,
-    }, plusContribRate, lines[1].today, inflationRate);
-    var pr = projectMonthsToTargetPhased(total, {
-      domesticMonthly: domesticMonthly,
-      domesticMonths: domesticMonths,
-      overseasMonthly: overseasMonthly,
-      firstYearSetupCost: firstYearSetupCost,
-      fallbackMonthly: monthlyContribution,
-    }, Math.pow(1 + clamp(expectedAnnual + 0.01, 0, 1), 1 / 12) - 1, lines[1].today, inflationRate);
+      fallbackMonthly: plan.fallbackMonthly + 1000,
+    });
+    var pc = projectMonthsToTargetPhased(total, plusPlan, monthlyRate, targetToday, inflationRate);
+    var pr = projectMonthsToTargetPhased(total, plan,
+      Math.pow(1 + Math.max(realRateFromNominal(clamp(numberValue(inputs.expectedReturnPct) + 1, 0, 100), inputs.inflationRatePct), 0), 1 / 12) - 1,
+      targetToday, inflationRate);
     sensitivity = {
       contributionMonths: pc.reachable ? Math.max(basMonths - pc.months, 0) : null,
       returnMonths: pr.reachable ? Math.max(basMonths - pr.months, 0) : null,
@@ -1095,15 +1568,29 @@ function calcFire(inputs) {
     lines: lines,
     totalAssets: total,
     progress: progress,
-    monthlyContribution: monthlyContribution,
+    monthlyContribution: max0(numberValue(inputs.monthlyContribution)),
     phasedMonthlyContribution: phasedMonthlyContribution,
     domesticMonthly: domesticMonthly,
     domesticMonths: domesticMonths,
     overseasMonthly: overseasMonthly,
     firstYearSetupCost: firstYearSetupCost,
     expectedAnnual: expectedAnnual,
-    targetNominal: targetNominal,
+    realAnnual: realAnnual,
+    savingGrowthPct: savingGrowthPct,
+    studyRatioPct: studyRatioPct,
+    studyDeductAnnual: Math.round((overseasMonthly || domesticMonthly) * 12 * studyRatioPct / 100),
+    usdSubsidy: usdSubsidy,
+    fxRate: fxRateInput,
+    daysAbroad: daysAbroad,
+    subsidyAnnualUsd: subsidyAnnualUsd,
+    subsidyAnnualRmb: subsidyAnnualRmb,
+    subsidyMonthlyRmb: subsidyAnnualRmb / 12,
+    returnHome: returnHome,
+    returnYears: returnYears,
+    targetNominal: lines[1].nominal,
+    targetToday: targetToday,
     projection: projection,
+    weather: weather,
     sensitivity: sensitivity,
   };
 }
@@ -1114,48 +1601,54 @@ function calcPhasedContributionForMonth(monthIndex, plan) {
   var domesticMonthly = max0(numberValue(plan.domesticMonthly));
   var overseasMonthly = max0(numberValue(plan.overseasMonthly));
   var fallbackMonthly = max0(numberValue(plan.fallbackMonthly));
+  var returnHome = Boolean(plan.returnHome);
+  var returnYears = max0(numberValue(plan.returnYears));
   var base = fallbackMonthly;
   if (domesticMonthly > 0 || overseasMonthly > 0) {
-    base = monthIndex <= domesticMonths ? domesticMonthly : overseasMonthly;
+    if (monthIndex <= domesticMonths) base = domesticMonthly;
+    else if (returnHome && returnYears > 0 && monthIndex > domesticMonths + Math.round(returnYears * 12)) base = domesticMonthly;
+    else base = overseasMonthly;
   }
-  return Math.max(base - setupDeduct, 0);
+  // 每年存款增长率（扣除通胀后）：实际购买力口径逐月抬升
+  var grown = base * Math.pow(1 + numberValue(plan.savingGrowthPct) / 100, (monthIndex - 1) / 12);
+  // 读书基金：从月存里先扣掉，不计入 FIRE 资产
+  var studyKeep = 1 - clamp(numberValue(plan.studyRatioPct), 0, 50) / 100;
+  return Math.max(grown * studyKeep - setupDeduct, 0);
 }
 
-function calcPhasedMonthlyContribution(domesticMonthly, domesticMonths, overseasMonthly, firstYearSetupCost, years) {
+function calcPhasedMonthlyContribution(domesticMonthly, domesticMonths, overseasMonthly, firstYearSetupCost, years, extraPlan) {
   var months = Math.max(Math.round(max0(years) * 12), 1);
+  var plan = Object.assign({
+    domesticMonthly: domesticMonthly,
+    domesticMonths: domesticMonths,
+    overseasMonthly: overseasMonthly,
+    firstYearSetupCost: firstYearSetupCost,
+    fallbackMonthly: overseasMonthly || domesticMonthly,
+    savingGrowthPct: 0,
+    studyRatioPct: 0,
+    returnHome: false,
+    returnYears: 0,
+  }, extraPlan || {});
   var sum = 0;
-  for (var m = 1; m <= months; m += 1) {
-    sum += calcPhasedContributionForMonth(m, {
-      domesticMonthly: domesticMonthly,
-      domesticMonths: domesticMonths,
-      overseasMonthly: overseasMonthly,
-      firstYearSetupCost: firstYearSetupCost,
-      fallbackMonthly: overseasMonthly || domesticMonthly,
-    });
-  }
+  for (var m = 1; m <= months; m += 1) sum += calcPhasedContributionForMonth(m, plan);
   return Math.round(sum / months);
 }
 
-// 月度滚动：value_{n+1} = value_n * (1+r) + contribution，直到达到（从今天购买力随通胀增长的）目标，返回月数
+// 月度滚动（实际购买力口径）：目标固定为今天的购买力，月存按实际增长率抬升
 function projectMonthsToTarget(startValue, monthlyContribution, monthlyRate, targetTodayValue, annualInflation) {
   return projectMonthsToTargetPhased(startValue, { fallbackMonthly: monthlyContribution }, monthlyRate, targetTodayValue, annualInflation);
 }
 
 function projectMonthsToTargetPhased(startValue, contributionPlan, monthlyRate, targetTodayValue, annualInflation) {
-  var monthlyInflation = Math.pow(1 + max0(annualInflation), 1 / 12) - 1;
   var value = max0(startValue);
   var targetToday = max0(targetTodayValue);
   if (value >= targetToday) return { reachable: true, months: 0, finalValue: value, targetValue: targetToday };
   var MAX_MONTHS = 80 * 12; // 80 年上限，超出视为不可达
-  var movingTarget = targetToday;
   for (var m = 1; m <= MAX_MONTHS; m++) {
-    var contribution = calcPhasedContributionForMonth(m, contributionPlan);
-    value = value * (1 + monthlyRate) + contribution;
-    // 目标本身随通胀缓慢上移，避免"名义目标固定但通胀吃掉购买力"的乐观偏差
-    movingTarget = movingTarget * (1 + monthlyInflation);
-    if (value >= movingTarget) return { reachable: true, months: m, finalValue: value, targetValue: movingTarget };
+    value = value * (1 + monthlyRate) + calcPhasedContributionForMonth(m, contributionPlan);
+    if (value >= targetToday) return { reachable: true, months: m, finalValue: value, targetValue: targetToday };
   }
-  return { reachable: false, months: Infinity, finalValue: value, targetValue: movingTarget };
+  return { reachable: false, months: Infinity, finalValue: value, targetValue: targetToday };
 }
 
 // 历史净值序列：从月度记录里取已填月末资产的月份，按时间排序，供折线图使用
@@ -1190,22 +1683,35 @@ function monthsToHuman(months) {
 function getFireInputs() {
   var annualExpenseEl = document.querySelector("#fireAnnualExpense");
   if (!annualExpenseEl) return null;
+  var pick = function (selector, fallback) {
+    var el = document.querySelector(selector);
+    if (!el || String(el.value).trim() === "") return fallback;
+    return numberValue(el.value);
+  };
   var contribEl = document.querySelector("#fireMonthlyContribution");
   var contribRaw = contribEl ? contribEl.value : "";
-  var explicitContribution = contribRaw !== "";
+  var explicitContribution = String(contribRaw).trim() !== "";
+  var returnHomeEl = document.querySelector("#fireReturnHome");
   return {
-    annualExpense: numberValue(annualExpenseEl.value || 120000),
-    currentAge: numberValue(document.querySelector("#fireCurrentAge").value || 22),
-    targetAge: numberValue(document.querySelector("#fireTargetAge").value || 35),
-    inflationRatePct: numberValue(document.querySelector("#fireInflationRate").value || 3),
-    realReturnPct: numberValue(document.querySelector("#fireRealReturn").value || 4),
-    supplementIncome: numberValue(document.querySelector("#fireSupplementIncome").value || 60000),
-    expectedReturnPct: numberValue((document.querySelector("#fireExpectedReturn") || {}).value || 7),
-    monthlyContribution: numberValue(explicitContribution ? contribRaw : estimateMonthlyContribution()),
-    domesticMonthly: numberValue(((document.querySelector("#fireDomesticMonthly") || {}).value) || 4000),
-    domesticMonths: numberValue(((document.querySelector("#fireDomesticMonths") || {}).value) || 12),
-    overseasMonthly: numberValue(((document.querySelector("#fireOverseasMonthly") || {}).value) || (explicitContribution ? contribRaw : 15000)),
-    firstYearSetupCost: numberValue(((document.querySelector("#fireSetupCost") || {}).value) || 12000),
+    annualExpense: pick("#fireAnnualExpense", V8_DEFAULTS.fireAnnualExpense),
+    currentAge: pick("#fireCurrentAge", 22),
+    targetAge: pick("#fireTargetAge", 35),
+    inflationRatePct: pick("#fireInflationRate", 3),
+    realReturnPct: pick("#fireRealReturn", V8_DEFAULTS.fireMinRealReturnPct),
+    supplementIncome: pick("#fireSupplementIncome", 60000),
+    expectedReturnPct: pick("#fireExpectedReturn", V8_DEFAULTS.fireExpectedReturnPct),
+    monthlyContribution: explicitContribution ? numberValue(contribRaw) : estimateMonthlyContribution(),
+    domesticMonthly: pick("#fireDomesticMonthly", V8_DEFAULTS.fireDomesticMonthly),
+    domesticMonths: pick("#fireDomesticMonths", 12),
+    overseasMonthly: pick("#fireOverseasMonthly", explicitContribution ? numberValue(contribRaw) : V8_DEFAULTS.fireOverseasMonthly),
+    firstYearSetupCost: pick("#fireSetupCost", 12000),
+    savingGrowthPct: pick("#fireSavingGrowth", V8_DEFAULTS.fireSavingGrowthPct),
+    studyRatioPct: pick("#fireStudyRatio", V8_DEFAULTS.fireStudyRatioPct),
+    usdSubsidy: pick("#fireUsdSubsidy", V8_DEFAULTS.usdSubsidy),
+    fxRate: pick("#fireFxRate", fxRate()),
+    daysAbroad: pick("#fireDaysAbroad", V8_DEFAULTS.daysAbroad),
+    returnHome: returnHomeEl ? returnHomeEl.checked : false,
+    returnYears: pick("#fireReturnYears", 2),
   };
 }
 
@@ -1222,6 +1728,19 @@ function estimateMonthlyContribution() {
   if (!vals.length) return 4000;
   var sum = vals.reduce(function (s, v) { return s + v; }, 0);
   return Math.round(sum / vals.length);
+}
+
+function renderFireWeather(result) {
+  var wrap = document.querySelector("#fireWeather");
+  if (!wrap) return;
+  wrap.innerHTML = result.weather.map(function (w) {
+    var isCurrent = result.projection.reachable && Number.isFinite(result.projection.months) && Math.abs(w.months - result.projection.months) < 1;
+    return '<article class="weather-card' + (isCurrent ? " hit" : "") + '">' +
+      "<span>" + esc(w.label) + "（名义 " + w.ratePct + "%）</span>" +
+      "<strong>" + esc(w.human) + "</strong>" +
+      "<small>" + esc(w.etaLabel) + (w.age != null ? " · 约 " + w.age + " 岁" : "") + "</small>" +
+    "</article>";
+  }).join("");
 }
 
 function renderFire() {
@@ -1243,6 +1762,24 @@ function renderFire() {
   document.querySelector("#fireProgressBar").style.width = Math.min(result.progress, 1) * 100 + "%";
 
   renderFireDashboard(result);
+  renderFireWeather(result);
+
+  var subsidyEl = document.querySelector("#fireSubsidyNote");
+  if (subsidyEl) {
+    subsidyEl.textContent = "美元补贴：月 " + money(result.usdSubsidy) + " × 12 × " + result.daysAbroad + "/365 = 年约 " +
+      result.subsidyAnnualUsd.toFixed(0) + " 美元（按汇率 " + result.fxRate + " 折合 " + money(result.subsidyAnnualRmb) +
+      "，月均 " + money(result.subsidyMonthlyRmb) + "）。外派后用真实数字替换。";
+  }
+  var studyEl = document.querySelector("#fireStudyNote");
+  if (studyEl) {
+    studyEl.textContent = "读书基金比例 " + result.studyRatioPct + "%" + (result.studyRatioPct > 0 ? "" : "（默认关闭）") +
+      "：启用后从月存里先扣掉、不计入 FIRE 资产；按当前参数每年少投约 " + money(result.studyDeductAnnual) + "。";
+  }
+  var socialEl = document.querySelector("#fireSocialNote");
+  if (socialEl) {
+    socialEl.textContent = "FIRE 后需按灵活就业身份继续缴社保，最低缴费年限将逐步提高到 20 年，这笔费用应包含在目标年支出里。";
+  }
+
   var noWork = calcFire(Object.assign({}, inputs, { supplementIncome: 0 }));
   var noWorkEl = document.querySelector("#fireNoWork");
   if (noWorkEl) {
@@ -1466,143 +2003,262 @@ var allocState = {
 
 function getAllocInputs() {
   var savingRateRaw = parseFloat(document.querySelector("#allocSavingRate").value);
+  var usdEl = document.querySelector("#allocUsdIncome");
+  var fxEl = document.querySelector("#allocFxRate");
+  var studyEl = document.querySelector("#allocStudyRatio");
+  var expatEl = document.querySelector("#allocExpatToggle");
+  var minCommEl = document.querySelector("#allocMinCommToggle");
+  var fxRaw = fxEl ? parseFloat(fxEl.value) : NaN;
+  var premiums = {};
+  var savedPremiums = (data.settings && data.settings.premiumInputs) || {};
+  Object.keys(savedPremiums).forEach(function (id) { premiums[id] = numberValue(savedPremiums[id]); });
+  document.querySelectorAll("#allocLayers input[data-premium-id]").forEach(function (input) {
+    var id = input.getAttribute("data-premium-id");
+    var value = parseFloat(input.value);
+    if (Number.isFinite(value)) premiums[id] = value;
+  });
   return {
     income: max0(parseFloat(document.querySelector("#allocIncome").value)),
     expense: max0(parseFloat(document.querySelector("#allocExpense").value)),
     reserve: max0(parseFloat(document.querySelector("#allocReserve").value)),
     savingRatePct: clamp(Number.isFinite(savingRateRaw) ? savingRateRaw : 35, 0, 100),
+    usdIncome: max0(usdEl ? parseFloat(usdEl.value) : 0),
+    fxRate: Number.isFinite(fxRaw) && fxRaw > 0 ? fxRaw : fxRate(),
+    expat: expatEl ? expatEl.checked : Boolean(data.settings && data.settings.expatMode),
+    studyRatioPct: clamp(studyEl && studyEl.value !== "" ? numberValue(studyEl.value) : studyFundRatioPct(), 0, 50),
+    minCommission5: minCommEl ? minCommEl.checked : !(data.settings && data.settings.minCommission5 === false),
+    premiums: premiums,
   };
 }
 
+// ---- 溢价分级（任务 3.4 / 任务 4）----
+function premiumTier(pct) {
+  if (!Number.isFinite(pct)) return null;
+  for (var i = 0; i < PREMIUM_TIERS.length; i += 1) {
+    if (pct < PREMIUM_TIERS[i].max) return PREMIUM_TIERS[i];
+  }
+  return PREMIUM_TIERS[PREMIUM_TIERS.length - 1];
+}
+
+function channelAdvice(asset, premiumPct) {
+  var channel = String(asset.channel || "");
+  if (channel !== "看溢价") return channel || "场外";
+  var tier = premiumTier(premiumPct);
+  if (!tier) return "待填本月溢价（<1% 场内，1~2% 小额，2~3% 半额，>5% 只走场外）";
+  return tier.label;
+}
+
+// 溢价决定本月这笔钱有多少真的买进去、多少进等候罐
+function premiumSplit(asset, amount, premiumPct) {
+  if (String(asset.channel || "") !== "看溢价" || !Number.isFinite(premiumPct)) {
+    return { invest: amount, waiting: 0, note: "" };
+  }
+  if (premiumPct < 1) return { invest: amount, waiting: 0, note: "溢价 <1%：全额场内" };
+  if (premiumPct < 2) return { invest: amount, waiting: 0, note: "溢价 1~2%：小额，优先满足本月计划" };
+  if (premiumPct < 3) {
+    var half = Math.round(amount / 2);
+    return { invest: half, waiting: amount - half, note: "溢价 2~3%：半额，另一半进等候罐" };
+  }
+  if (premiumPct < 5) return { invest: 0, waiting: amount, note: "溢价 3~5%：暂停场内，改为场外每日定投（买不进就留等候罐）" };
+  return { invest: 0, waiting: amount, note: "溢价 >5%：绝对不买场内，全部改为场外每日定投（限购就进等候罐）" };
+}
+
+// 按缺口分配：最低 5 元模式只推缺口最大的 1~2 只，否则按缺口比例分给全部
+function distributeByGap(entries, budget, minComm) {
+  var result = entries.map(function (entry) { return { entry: entry, amount: 0 }; });
+  if (budget <= 0) return result;
+  var active = result.filter(function (row) { return row.entry.gapAmount > 0; });
+  if (!active.length) return result;
+  var picked = active;
+  if (minComm) {
+    picked = active.slice().sort(function (a, b) { return b.entry.gapAmount - a.entry.gapAmount; }).slice(0, active.length > 1 ? 2 : 1);
+  }
+  var sum = picked.reduce(function (s, row) { return s + row.entry.gapAmount; }, 0) || 1;
+  var allocated = 0;
+  picked.forEach(function (row, index) {
+    var isLast = index === picked.length - 1;
+    var remaining = Math.max(budget - allocated, 0);
+    var raw = isLast ? remaining : Math.round(budget * row.entry.gapAmount / sum);
+    var amount = isLast ? remaining : Math.min(Math.max(raw, 0), remaining);
+    row.amount = amount;
+    allocated += amount;
+  });
+  return result;
+}
+
+// 核心分配引擎（v8.0）
+// 顺序：应急罐优先 → 读书基金（默认关闭）→ 投资组合按缺口；外派阶段再按币种拆
 function calcAllocation(inputs) {
   var savingRate = inputs.savingRatePct / 100;
-  var cashflowAvailable = Math.max(inputs.income - inputs.expense - inputs.reserve, 0);
-  var targetSaving = inputs.income * savingRate;
+  var expat = Boolean(inputs.expat);
+  var fx = Number.isFinite(inputs.fxRate) && inputs.fxRate > 0 ? inputs.fxRate : fxRate();
+  var usdIncomeRmb = max0(inputs.usdIncome) * fx;
+  var totalIncome = max0(inputs.income) + (expat ? usdIncomeRmb : 0);
+  var cashflowAvailable = Math.max(totalIncome - inputs.expense - inputs.reserve, 0);
+  var targetSaving = totalIncome * savingRate;
   var rawInvestBase = Math.min(cashflowAvailable, targetSaving);
   var investBase = Math.round(rawInvestBase);
   var remainingCash = cashflowAvailable - investBase;
 
-  var totalAssets = data.assets.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
-  var targetSum = data.assets.reduce(function (s, a) { return s + numberValue(a.target); }, 0);
-  var speculativeValue = data.assets.reduce(function (s, a) {
+  var items = investmentAssets();
+  var totalAssets = items.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  var targetSum = targetSumOf(items);
+  var speculativeValue = items.reduce(function (s, a) {
     return a.layer === "投机层" ? s + numberValue(a.value) : s;
   }, 0);
   var speculativeRatio = totalAssets > 0 ? speculativeValue / totalAssets : 0;
   var speculativePaused = speculativeRatio >= 0.10;
   var useCorrection = allocState.mode === "修正" && totalAssets > 0 && targetSum > 0;
+  var effectiveTargets = computeEffectiveTargets(items);
 
-  var effectiveTargets = computeEffectiveTargets(data.assets);
+  // ---- 步骤 1：应急罐没满，先补满（补满后剩余才继续往下走）----
+  var goal = emergencyGoal();
+  var emergencyNow = jarValue("emergency");
+  var emergencyGap = Math.max(goal - emergencyNow, 0);
+  var emergencyAlloc = Math.min(investBase, emergencyGap);
+  var afterEmergency = investBase - emergencyAlloc;
+  var emergencyMonths = emergencyGap > 0 && investBase > 0 ? Math.ceil(emergencyGap / investBase) : 0;
 
-  // 归一化权重
-  var norms = data.assets.map(function (a) {
+  // ---- 步骤 2：读书基金（默认关闭；启用后按比例，达到目标自动停止）----
+  var studyEnabled = studyFundEnabled();
+  var studyGoalAmt = studyFundGoal();
+  var studyNow = jarValue("study");
+  var studyAlloc = 0;
+  var studyStopped = false;
+  if (studyEnabled && afterEmergency > 0) {
+    if (studyGoalAmt > 0 && studyNow >= studyGoalAmt) {
+      studyStopped = true;
+    } else {
+      var wantStudy = Math.round(afterEmergency * clamp(inputs.studyRatioPct, 0, 50) / 100);
+      studyAlloc = studyGoalAmt > 0 ? Math.min(wantStudy, Math.max(studyGoalAmt - studyNow, 0)) : wantStudy;
+    }
+  }
+  var portfolioBudget = afterEmergency - studyAlloc;
+
+  // ---- 步骤 3：投资组合内部按缺口分配 ----
+  // 缺口按「本月投完之后的组合总额」算：持仓全为 0 时也能按目标比例分配第一笔钱
+  var baseTotal = totalAssets + Math.max(portfolioBudget, 0);
+  var norms = items.map(function (a) {
     var normTarget = targetSum > 0 ? numberValue(a.target) / targetSum : 0;
-    return { asset: a, normTarget: normTarget, effectiveTarget: numberValue(effectiveTargets[a.id]) };
+    var effectiveTarget = numberValue(effectiveTargets[a.id]) || normTarget;
+    var targetAmount = effectiveTarget * baseTotal;
+    return {
+      asset: a,
+      normTarget: normTarget,
+      effectiveTarget: effectiveTarget,
+      targetAmount: targetAmount,
+      gapAmount: Math.max(targetAmount - numberValue(a.value), 0),
+      ratio: totalAssets > 0 ? numberValue(a.value) / totalAssets : 0,
+      premium: inputs.premiums && Number.isFinite(Number(inputs.premiums[a.id])) ? Number(inputs.premiums[a.id]) : NaN,
+    };
   });
 
-  // 第一遍：按 status 分流
   var pool = [];
   var skipped = [];
-  var bufferedList = []; // status === "buffered" 的产品，单独算重定向
-  var manualPausedNormSum = 0;
   norms.forEach(function (n) {
-    var currentRatio = totalAssets > 0 ? numberValue(n.asset.value) / totalAssets : 0;
-    var gap = currentRatio - n.effectiveTarget;
-    if (n.asset.status === "paused:manual") {
-      manualPausedNormSum += n.normTarget;
-      skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "手动暂停（份额留作现金）" });
-    } else if (speculativePaused && n.asset.layer === "投机层") {
-      skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "投机层超限暂停" });
-    } else if (isBufferedStatus(n.asset.status)) {
-      bufferedList.push({ asset: n.asset, normTarget: n.normTarget, gap: gap });
-    } else if (useCorrection && gap > 0.05) {
-      skipped.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "偏高暂停" });
-    } else {
-      pool.push({ asset: n.asset, normTarget: n.normTarget, gap: gap, reason: "" });
-    }
+    var asset = n.asset;
+    var buyStatus = String(asset.buyStatus || "正常");
+    var entry = Object.assign({}, n, { channelAdvice: channelAdvice(asset, n.premium) });
+    if (asset.status === "paused:manual") skipped.push(Object.assign(entry, { reason: "手动暂停（份额留作现金）" }));
+    else if (buyStatus === "暂停申购") skipped.push(Object.assign(entry, { reason: "暂停申购，本月不推荐" }));
+    else if (speculativePaused && asset.layer === "投机层") skipped.push(Object.assign(entry, { reason: "投机层超限暂停" }));
+    else if (isBufferedStatus(asset.status)) skipped.push(Object.assign(entry, { reason: "暂存中" }));
+    else if (useCorrection && n.ratio - n.effectiveTarget > 0.03) skipped.push(Object.assign(entry, { reason: "偏高暂停（超目标 3 个百分点）" }));
+    else pool.push(entry);
   });
 
-  // 计算 buffered 应得总额（按它们的归一化权重，从 investBase 中预扣）
-  var bufferedNormSum = bufferedList.reduce(function (s, b) { return s + b.normTarget; }, 0);
-  var bufferedAllocTotal = Math.min(Math.round(investBase * bufferedNormSum), investBase);
-  // Preserve the paused share as cash without increasing other asset allocations.
-  var manualPausedCash = Math.min(Math.round(investBase * manualPausedNormSum), investBase - bufferedAllocTotal);
-  var poolInvestBase = investBase - bufferedAllocTotal - manualPausedCash;
+  // 外派阶段：美元优先买美股（成长+投机），人民币买国内（现金/防御/生财）
+  var usShare = V8_LAYERS.reduce(function (s, layer) {
+    return s + (layer.name === "成长层" || layer.name === "投机层" ? layer.target : 0);
+  }, 0);
+  var usEntries = pool.filter(function (e) { return e.asset.layer === "成长层" || e.asset.layer === "投机层"; });
+  var domesticEntries = pool.filter(function (e) { return e.asset.layer !== "成长层" && e.asset.layer !== "投机层"; });
 
-  // 可投池权重（pool 内部按 poolWeightSum 分 poolInvestBase）
-  var poolWeightSum = pool.reduce(function (s, p) { return s + p.normTarget; }, 0);
-  var allocatedTotal = 0;
-  var unbufferedCash = 0;
-  var products = [];
-
-  if (pool.length === 0 || poolWeightSum === 0) {
-    pool.forEach(function (p) {
-      products.push({ asset: p.asset, normTarget: p.normTarget, amount: 0, skipped: false, reason: "", bufferIncoming: 0 });
-    });
+  var expatInfo = null;
+  var rows = [];
+  if (expat && portfolioBudget > 0) {
+    var rmbPool = Math.min(max0(inputs.income), investBase);
+    var usdPool = Math.max(investBase - rmbPool, 0);
+    // 应急罐用人民币；读书基金优先用美元
+    var rmbAfterEmergency = Math.max(rmbPool - emergencyAlloc, 0);
+    var usdAfterStudy = Math.max(usdPool - Math.min(studyAlloc, usdPool), 0);
+    var usdTarget = Math.round(usShare * investBase);
+    var usdAllocated = Math.min(usdAfterStudy, usdTarget);
+    var domesticBudget = Math.min(rmbAfterEmergency, Math.max(investBase - usdTarget, 0));
+    var usdLeftover = Math.max(usdAfterStudy - usdAllocated, 0);
+    var ammoTarget = Math.max(Math.round(targetSum > 0 ? (0.05 / (targetSum || 1)) * totalAssets : 0), 0);
+    var ammoGap = Math.max(ammoTarget - portfolioValue(), 0);
+    var ammoTopUp = Math.min(usdLeftover, ammoGap);
+    expatInfo = {
+      fxRate: fx,
+      usdIncome: max0(inputs.usdIncome),
+      usdIncomeRmb: usdIncomeRmb,
+      rmbIncome: max0(inputs.income),
+      rmbPool: rmbPool,
+      usdPool: usdPool,
+      usdTarget: usdTarget,
+      usdAllocated: usdAllocated,
+      usdLeftover: usdLeftover,
+      ammoTopUp: ammoTopUp,
+      suggestConvert: Math.max(usdLeftover - ammoTopUp, 0),
+      domesticBudget: domesticBudget,
+      usdRemainingAfter: usdLeftover,
+      note: "不要把国内美元汇出去开海外券商买股票。",
+    };
+    var usdRows = distributeByGap(usEntries, usdAllocated, inputs.minCommission5);
+    var rmbRows = distributeByGap(domesticEntries, domesticBudget, inputs.minCommission5);
+    rows = usdRows.concat(rmbRows).map(function (row) { return Object.assign(row, { currency: usEntries.indexOf(row.entry) >= 0 ? "USD" : "CNY" }); });
   } else {
-    var allocatedSum = 0;
-    for (var i = 0; i < pool.length; i++) {
-      var isLast = i === pool.length - 1;
-      var raw = isLast ? poolInvestBase - allocatedSum : Math.round(poolInvestBase * pool[i].normTarget / poolWeightSum);
-      var remaining = Math.max(poolInvestBase - allocatedSum, 0);
-      var amt = isLast ? remaining : Math.min(Math.max(raw, 0), remaining);
-      allocatedSum += amt;
-      products.push({ asset: pool[i].asset, normTarget: pool[i].normTarget, amount: amt, skipped: false, reason: "", bufferIncoming: 0 });
-    }
-    allocatedTotal = allocatedSum;
+    rows = distributeByGap(pool, portfolioBudget, inputs.minCommission5);
   }
 
-  // 处理 buffered：每只算自己应得的金额，redirect 到 destination
-  var bufferedAllocSum = 0;
-  bufferedList.forEach(function (b, idx) {
-    var isLast = idx === bufferedList.length - 1;
-    var raw = isLast
-      ? bufferedAllocTotal - bufferedAllocSum
-      : (bufferedNormSum > 0 ? Math.round(bufferedAllocTotal * b.normTarget / bufferedNormSum) : 0);
-    var remaining = Math.max(bufferedAllocTotal - bufferedAllocSum, 0);
-    var amt = isLast ? remaining : Math.min(Math.max(raw, 0), remaining);
-    bufferedAllocSum += amt;
-
-    // 解析 destination：优先 assetId，旧数据回退 name；destination 必须可买（防循环 / 防去向消失）
-    var destProduct = resolveBufferDestination(b.asset, products);
-    var destName = b.asset.bufferDestination || BUFFER_DEFAULT;
-
-    if (destProduct && amt > 0) {
-      destProduct.amount += amt;
-      destProduct.bufferIncoming += amt;
-      products.push({
-        asset: b.asset,
-        normTarget: b.normTarget,
-        amount: 0,
-        skipped: true,
-        reason: "暂存中",
-        bufferTo: destProduct.asset.name,
-        bufferRedirected: amt,
-        bufferIncoming: 0,
-      });
-      allocatedTotal += amt;
-    } else {
-      // 去向不存在或不可用：本月这部分钱保留为现金
-      unbufferedCash += amt;
-      products.push({
-        asset: b.asset,
-        normTarget: b.normTarget,
-        amount: 0,
-        skipped: true,
-        reason: "暂存（去向不可用）",
-        bufferTo: destName,
-        bufferRedirected: 0,
-        bufferUnavailable: amt,
-        bufferIncoming: 0,
-      });
+  // 溢价分流 + 组装产品行
+  var products = [];
+  var allocatedTotal = emergencyAlloc + studyAlloc;
+  var waitingFromPremium = 0;
+  var recommendedNames = [];
+  rows.forEach(function (row) {
+    var entry = row.entry;
+    var asset = entry.asset;
+    if (row.amount <= 0) {
+      if (pool.indexOf(entry) >= 0) {
+        var zeroReason = entry.gapAmount <= 0
+          ? "本月无缺口（已达目标）"
+          : (inputs.minCommission5 ? "最低 5 元：本月先买缺口最大的 1~2 只" : "按缺口比例分配后本月金额为 0");
+        products.push({
+          asset: asset, normTarget: entry.normTarget, effectiveTarget: entry.effectiveTarget, targetAmount: entry.targetAmount,
+          gapAmount: entry.gapAmount, amount: 0, skipped: true, reason: zeroReason,
+          channel: entry.channelAdvice, premium: entry.premium, bufferIncoming: 0,
+        });
+      }
+      return;
     }
+    var split = premiumSplit(asset, row.amount, entry.premium);
+    var invested = split.invest;
+    var waiting = split.waiting;
+    waitingFromPremium += waiting;
+    allocatedTotal += invested;
+    if (invested > 0) recommendedNames.push(asset.name + "（" + entry.channelAdvice + "）");
+    products.push({
+      asset: asset, normTarget: entry.normTarget, effectiveTarget: entry.effectiveTarget, targetAmount: entry.targetAmount,
+      gapAmount: entry.gapAmount, amount: invested, skipped: invested <= 0, reason: invested <= 0 ? split.note : "",
+      channel: entry.channelAdvice, premium: entry.premium, premiumWaiting: waiting, premiumNote: split.note,
+      currency: row.currency || "CNY", bufferIncoming: 0,
+    });
+  });
+  skipped.forEach(function (entry) {
+    products.push({
+      asset: entry.asset, normTarget: entry.normTarget, effectiveTarget: entry.effectiveTarget, targetAmount: entry.targetAmount,
+      gapAmount: entry.gapAmount, amount: 0, skipped: true, reason: entry.reason,
+      channel: entry.channelAdvice, premium: entry.premium, bufferIncoming: 0,
+    });
   });
 
-  // 最后把 useCorrection / 投机层超限的 skipped 加进 products
-  skipped.forEach(function (s) {
-    products.push({ asset: s.asset, normTarget: s.normTarget, amount: 0, skipped: true, reason: s.reason, bufferIncoming: 0 });
-  });
+  var manualPausedCash = skipped.reduce(function (s, entry) {
+    return entry.reason.indexOf("手动暂停") === 0 ? s + Math.round(portfolioBudget * entry.normTarget) : s;
+  }, 0);
 
-  // 按层级汇总（使用归一化权重）
+  // 按层级汇总
   var layers = {};
   products.forEach(function (p) {
     var layer = p.asset.layer;
@@ -1631,21 +2287,35 @@ function calcAllocation(inputs) {
     totalAssets: totalAssets,
     targetSum: targetSum,
     targetMissing: targetSum <= 0,
+    targetCheck: validateTargetSum(items),
     speculativeRatio: speculativeRatio,
     speculativePaused: speculativePaused,
-    bufferedCount: bufferedList.length,
-    bufferedAllocTotal: bufferedAllocTotal,
-    unbufferedCash: unbufferedCash,
+    bufferedCount: skipped.filter(function (e) { return e.reason === "暂存中"; }).length,
+    bufferedAllocTotal: 0,
+    unbufferedCash: 0,
     manualPausedCash: manualPausedCash,
+    waitingFromPremium: waitingFromPremium,
+    recommendedNames: recommendedNames,
+    emergency: {
+      goal: goal, value: emergencyNow, gap: emergencyGap, amount: emergencyAlloc,
+      monthsToFull: emergencyMonths, full: emergencyGap <= 0, reachedAfter: emergencyNow + emergencyAlloc >= goal,
+    },
+    study: {
+      enabled: studyEnabled, goal: studyGoalAmt, value: studyNow, amount: studyAlloc,
+      ratioPct: clamp(inputs.studyRatioPct, 0, 50), stopped: studyStopped,
+    },
+    portfolioBudget: portfolioBudget,
+    expat: expatInfo,
     products: products,
     layers: layerList,
   };
 }
 
 function statusLabel(layer) {
-  if (layer.allSkipped && layer.products.some(function (p) { return p.reason === "投机层超限暂停"; })) return "超限暂停";
-  if (layer.allSkipped && layer.products.some(function (p) { return p.asset.status === "paused:manual"; })) return "手动暂停";
-  if (layer.allSkipped && layer.products.every(function (p) { return p.reason === "暂存中" || p.reason === "暂存（去向不可用）"; })) return "全部暂存";
+  var reasons = layer.products.map(function (p) { return String(p.reason || ""); });
+  if (layer.allSkipped && reasons.some(function (r) { return r.indexOf("投机层超限") === 0; })) return "超限暂停";
+  if (layer.allSkipped && reasons.some(function (r) { return r.indexOf("手动暂停") === 0; })) return "手动暂停";
+  if (layer.allSkipped && reasons.every(function (r) { return r.indexOf("最低 5 元") === 0 || r.indexOf("暂停申购") === 0; })) return "本月不推荐";
   if (layer.allSkipped) return "偏高暂停";
   if (layer.hasSkipped) return "部分暂停";
   if (layer.total === 0) return "暂停";
@@ -1690,44 +2360,31 @@ function renderAllocate() {
   refreshAllocation();
 }
 
-function refreshAllocation() {
-  var inputs = getAllocInputs();
-  var result = calcAllocation(inputs);
-
-  // Summary
-  document.querySelector("#allocCashflow").textContent = money(result.cashflowAvailable);
-  document.querySelector("#allocSavingPct").textContent = inputs.savingRatePct;
-  document.querySelector("#allocTargetSaving").textContent = money(result.targetSaving);
-  document.querySelector("#allocFinalInvest").textContent = money(result.allocatedTotal);
-  document.querySelector("#allocRemaining").textContent = money(result.actualRemainingCash);
-  renderAllocationChecklist(result);
-  renderOpportunityChecker();
-
-  // Hint
-  var hint = document.querySelector("#allocHint");
-  hint.style.display = "none";
-  if (result.targetMissing) {
-    hint.style.display = "block";
-    hint.textContent = "目标占比未设置，请先在资产页设置目标占比。";
-  } else if (result.cashflowAvailable <= 0) {
-    hint.style.display = "block";
-    hint.textContent = "本月现金流不足，建议先不投资，保留现金。";
-  } else if (result.targetSaving > result.cashflowAvailable) {
-    hint.style.display = "block";
-    hint.textContent = "本月现金流限制，实际建议投资低于目标储蓄。";
-  } else if (result.useCorrection && result.allocatedTotal === 0 && result.investBase > 0) {
-    hint.style.display = "block";
-    hint.textContent = "当前配置无优先补仓项，本月建议保留现金。原始建议投资额度：" + money(result.investBase);
-  } else if (result.speculativePaused) {
-    hint.style.display = "block";
-    hint.textContent = "投机层已达到或超过 10%，本月自动暂停给投机层分配新资金。";
-  } else if (result.allocatedTotal < result.investBase) {
-    hint.style.display = "block";
-    hint.textContent = "部分产品暂停或暂存去向不可用，未分配金额保留现金。原始建议投资额度：" + money(result.investBase);
+function renderJarAllocation(result) {
+  var wrap = document.querySelector("#jarAllocation");
+  if (!wrap) return;
+  var rows = [];
+  rows.push('<div class="jar-split-row"><span>🛟 应急罐</span><strong>' + money(result.emergency.amount) + '</strong><em>' +
+    (result.emergency.full ? "已满，本月不再补" : "还差 " + money(result.emergency.gap) + "，预计 " + result.emergency.monthsToFull + " 个月存满") + '</em></div>');
+  rows.push('<div class="jar-split-row' + (result.study.enabled ? "" : " muted") + '"><span>🎓 读书基金</span><strong>' + money(result.study.amount) + '</strong><em>' +
+    (result.study.enabled ? (result.study.stopped ? "已达目标，自动停止" : "比例 " + result.study.ratioPct + "%（优先美元）") : "默认关闭，本月跳过") + '</em></div>');
+  rows.push('<div class="jar-split-row"><span>📈 投资组合</span><strong>' + money(result.portfolioBudget) + '</strong><em>' +
+    (result.recommendedNames.length ? "推荐 " + esc(result.recommendedNames.join("、")) : "按缺口分配") + '</em></div>');
+  if (result.expat) {
+    var x = result.expat;
+    rows.push('<div class="jar-split-row alloc-currency"><span>💵 外派币种</span><strong>' + money(x.usdPool * x.fxRate) + '</strong><em>' +
+      "美元折合（1 美元 = " + x.fxRate + "）：美股用 " + money(x.usdAllocated * x.fxRate) + "，人民币 " + money(x.rmbPool) + " 分给国内部分；剩余美元 " +
+      money(x.usdLeftover * x.fxRate) + " 先补弹药罐 " + money(x.ammoTopUp * x.fxRate) + "，其余建议结汇 " + money(x.suggestConvert * x.fxRate) + '</em></div>');
   }
+  if (result.waitingFromPremium > 0) {
+    rows.push('<div class="jar-split-row"><span>⏳ 等候罐</span><strong>' + money(result.waitingFromPremium) + '</strong><em>溢价过高，本月进等候罐</em></div>');
+  }
+  wrap.innerHTML = '<div class="checklist-title">本月分配顺序</div><div class="jar-split-grid">' + rows.join("") + '</div>';
+}
 
-  // Layers
+function renderAllocLayers(result) {
   var layersEl = document.querySelector("#allocLayers");
+  if (!layersEl) return;
   layersEl.innerHTML = "";
   result.layers.forEach(function (layer) {
     var layerDiv = document.createElement("div");
@@ -1735,45 +2392,41 @@ function refreshAllocation() {
     var colorClass = layerColor(layer.products[0] && layer.products[0].asset.element);
     var statusText = statusLabel(layer);
     var statusBadge = statusText === "正常" ? '<i class="badge ok">正常</i>' : '<i class="badge fire">' + statusText + "</i>";
-
+    var layerMeta = V8_LAYERS.find(function (l) { return l.name === layer.name; }) || {};
     layerDiv.innerHTML =
       '<div class="alloc-layer-head" data-layer="' + esc(layer.name) + '">' +
         '<div class="layer-label">' +
-          '<i class="badge ' + colorClass + '">' + esc(layer.name) + "</i> " +
-          statusBadge +
+          '<i class="badge ' + colorClass + '">' + esc(layer.name) + "</i> " + statusBadge +
+          (layerMeta.cap ? '<small>上限 ' + pct(layerMeta.cap) + "</small>" : "") +
         "</div>" +
-        '<div class="layer-amount">' +
-          money(layer.total) +
-          '<small>' + pct(layer.normTargetSum) + "</small>" +
-        "</div>" +
+        '<div class="layer-amount">' + money(layer.total) + '<small>' + pct(layer.normTargetSum) + "</small></div>" +
         '<span class="layer-arrow">▾</span>' +
       "</div>" +
       '<div class="alloc-layer-body">' +
         layer.products.map(function (p) {
           var skippedClass = p.skipped ? " skipped" : "";
-          var nameHtml = esc(p.asset.name);
-          if (p.bufferTo && p.bufferRedirected > 0) {
-            nameHtml += '<small class="prod-buffer">→ ' + esc(p.bufferTo) + " · " + money(p.bufferRedirected) + "</small>";
-          } else if (p.reason === "暂存（去向不可用）") {
-            nameHtml += '<small class="prod-buffer">→ ' + esc(p.bufferTo || "") + "（去向不可用）</small>";
-          }
-          var amountHtml = money(p.amount);
+          var extras = [];
+          if (p.asset.code) extras.push("代码 " + esc(p.asset.code));
+          extras.push("在哪买：" + esc(p.channel || p.asset.channel || "—"));
+          if (p.asset.buyStatus && p.asset.buyStatus !== "正常") extras.push(esc(p.asset.buyStatus));
+          if (p.gapAmount > 0) extras.push("缺口 " + money(p.gapAmount));
+          if (p.currency === "USD") extras.push("美元现汇份额");
+          if (p.premiumWaiting > 0) extras.push("进等候罐 " + money(p.premiumWaiting));
+          if (p.premiumNote) extras.push(esc(p.premiumNote));
+          var premiumHtml = String(p.asset.channel) === "看溢价"
+            ? '<label class="premium-input">本月溢价 %<input type="number" step="0.1" data-premium-id="' + esc(p.asset.id) + '" value="' + (Number.isFinite(p.premium) ? p.premium : "") + '" placeholder="—"></label>'
+            : "";
           var subText = pct(p.normTarget);
           if (p.skipped) subText += " · " + esc(p.reason);
-          else if (p.bufferIncoming > 0) subText += " · 含 " + money(p.bufferIncoming) + " 暂存";
           return '<div class="alloc-product' + skippedClass + '">' +
-            '<span class="prod-name">' + nameHtml + "</span>" +
-            '<span class="prod-amount">' +
-              amountHtml +
-              "<small>" + subText + "</small>" +
-            "</span>" +
+            '<span class="prod-name">' + esc(p.asset.name) + '<small class="prod-meta">' + extras.join(" · ") + "</small></span>" +
+            '<span class="prod-amount">' + money(p.amount) + "<small>" + subText + "</small></span>" +
+            premiumHtml +
           "</div>";
         }).join("") +
       "</div>";
     layersEl.appendChild(layerDiv);
   });
-
-  // Head click handlers
   layersEl.querySelectorAll(".alloc-layer-head").forEach(function (head) {
     head.addEventListener("click", function () {
       var layerName = head.getAttribute("data-layer");
@@ -1781,191 +2434,200 @@ function refreshAllocation() {
       refreshAllocation();
     });
   });
+  layersEl.querySelectorAll("input[data-premium-id]").forEach(function (input) {
+    input.addEventListener("change", function () {
+      var id = input.getAttribute("data-premium-id");
+      var value = parseFloat(input.value);
+      if (!data.settings) data.settings = {};
+      if (!isPlainRecord(data.settings.premiumInputs)) data.settings.premiumInputs = {};
+      if (Number.isFinite(value)) data.settings.premiumInputs[id] = value;
+      else delete data.settings.premiumInputs[id];
+      if (!saveData()) return;
+      refreshAllocation();
+    });
+  });
+}
+
+function refreshAllocation() {
+  var inputs = getAllocInputs();
+  var result = calcAllocation(inputs);
+
+  document.querySelector("#allocCashflow").textContent = money(result.cashflowAvailable);
+  document.querySelector("#allocSavingPct").textContent = inputs.savingRatePct;
+  document.querySelector("#allocTargetSaving").textContent = money(result.targetSaving);
+  document.querySelector("#allocFinalInvest").textContent = money(result.allocatedTotal);
+  document.querySelector("#allocRemaining").textContent = money(result.actualRemainingCash);
+  renderJarAllocation(result);
+  renderAllocationChecklist(result);
+  renderDrawdownChecker();
+
+  var hint = document.querySelector("#allocHint");
+  hint.style.display = "none";
+  var hints = [];
+  if (result.targetMissing) hints.push("目标占比未设置，请先在资产页设置目标占比。");
+  if (!result.emergency.full) hints.push("先打地基：应急罐还差 " + money(result.emergency.gap) + " 元，预计 " + result.emergency.monthsToFull + " 个月存满；存满之前其他步骤跳过。");
+  if (result.cashflowAvailable <= 0) hints.push("本月现金流不足，建议先不投资，保留现金。");
+  else if (result.targetSaving > result.cashflowAvailable) hints.push("本月现金流限制，实际建议投资低于目标储蓄。");
+  if (result.study.enabled) {
+    if (result.study.stopped) hints.push("读书基金已达目标，这一步自动停止，剩余金额进投资组合。");
+    else if (result.study.amount > 0) hints.push("读书基金本月 " + money(result.study.amount) + "（比例 " + result.study.ratioPct + "%），优先用美元存。");
+  } else {
+    hints.push("读书基金默认关闭，这一步跳过。");
+  }
+  if (inputs.minCommission5 && result.emergency.full && result.portfolioBudget > 0) hints.push("券商收最低 5 元：本月只推荐缺口最大的 1~2 只，单笔尽量不少于 3000 元。");
+  if (result.waitingFromPremium > 0) hints.push("本月有 " + money(result.waitingFromPremium) + " 因溢价进等候罐。");
+  if (result.expat) hints.push(result.expat.note);
+  if (result.useCorrection && result.allocatedTotal === 0 && result.investBase > 0) hints.push("当前配置无优先补仓项，本月建议保留现金。原始建议投资额度：" + money(result.investBase));
+  if (result.speculativePaused) hints.push("投机层已达到或超过 10%，本月自动暂停给投机层分配新资金。");
+  if (result.allocatedTotal < result.investBase) hints.push("部分产品暂停或转入等候罐，未分配金额保留现金。原始建议投资额度：" + money(result.investBase));
+  if (hints.length) {
+    hint.style.display = "block";
+    hint.innerHTML = hints.map(function (t) { return '<div class="tip">' + esc(t) + "</div>"; }).join("");
+  }
+
+  renderAllocLayers(result);
 }
 
 function renderAllocationChecklist(result) {
   var wrap = document.querySelector("#allocChecklist");
   if (!wrap) return;
   var inputs = result.inputs;
-  var remainingDetail = result.unbufferedCash > 0 ? "含去向不可用暂存 " + money(result.unbufferedCash) : "可继续保留现金";
-  if (result.manualPausedCash > 0) remainingDetail += "；含手动暂停份额 " + money(result.manualPausedCash);
-  var redirectedTotal = result.bufferedAllocTotal - result.unbufferedCash;
-  var investDetail = redirectedTotal > 0 ? "含已重定向暂存 " + money(redirectedTotal) : "按可投目标分配";
-  wrap.innerHTML =
-    '<div class="checklist-title">工资到账后操作清单</div>' +
-    '<div class="checklist-grid">' +
-      '<div class="checklist-item"><span>固定支出账户</span><strong>' + money(inputs.expense) + '</strong><small>房租、订阅、保险等</small></div>' +
-      '<div class="checklist-item"><span>机动预留</span><strong>' + money(inputs.reserve) + '</strong><small>聚餐、人情、交通等</small></div>' +
-      '<div class="checklist-item primary"><span>本月计划投资</span><strong>' + money(result.allocatedTotal) + '</strong><small>' + investDetail + '</small></div>' +
-      '<div class="checklist-item"><span>暂存/剩余现金</span><strong>' + money(result.actualRemainingCash) + '</strong><small>' + remainingDetail + '</small></div>' +
-    '</div>';
+  var rows = [
+    { label: "固定支出账户", value: money(inputs.expense), note: "房租、订阅、保险等" },
+    { label: "机动预留", value: money(inputs.reserve), note: "聚餐、人情、交通等" },
+    { label: "应急罐", value: money(result.emergency.amount), note: result.emergency.full ? "已满" : "先打地基" },
+    { label: "读书基金", value: money(result.study.amount), note: result.study.enabled ? "启用中" : "默认关闭" },
+    { label: "本月计划投资", value: money(result.allocatedTotal), note: "计划，不是执行" },
+    { label: "剩余现金", value: money(result.actualRemainingCash), note: result.waitingFromPremium > 0 ? "含等候罐 " + money(result.waitingFromPremium) : "保留现金" },
+  ];
+  wrap.innerHTML = '<div class="checklist-title">工资到账后操作清单</div><div class="checklist-grid">' +
+    rows.map(function (r, index) {
+      return '<div class="checklist-item' + (index === 4 ? " primary" : "") + '"><span>' + esc(r.label) + "</span><strong>" +
+        esc(r.value) + "</strong><small>" + esc(r.note) + "</small></div>";
+    }).join("") + "</div>";
 }
 
-function opportunityTriggerKey(assetId, pctValue) {
-  return assetId + "_" + pctValue;
-}
-
-function getOpportunityAmmo() {
-  var cashValue = data.assets
+// ---- 回撤检查器（任务 7）----
+// 弹药罐 = 投资组合里的现金层（货币基金）市值；1 份 = 弹药罐余额 ÷ 3，三档正好用完。
+function drawdownAmmo() {
+  return investmentAssets()
     .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
     .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
-  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
-  return Math.max(0, cashValue - goal);
 }
 
-function opportunityDestinationLabel(asset) {
-  if (!asset) return "";
-  if (!isBufferedStatus(asset.status)) return "可直接买入";
-  var dest = data.assets.find(function (a) { return a.id === asset.bufferDestinationId && a.id !== asset.id; }) ||
-    data.assets.find(function (a) { return a.name === asset.bufferDestination && a.id !== asset.id; }) ||
-    data.assets.find(function (a) { return a.id === BUFFER_DEFAULT_ID && a.id !== asset.id; }) ||
-    data.assets.find(function (a) { return a.name === BUFFER_DEFAULT && a.id !== asset.id; });
-  return "当前暂存到" + ((dest && dest.name) || asset.bufferDestination || BUFFER_DEFAULT);
+function drawdownInputs(assetId) {
+  var store = (data.settings && data.settings.drawdownInputs) || {};
+  var row = store[assetId] || {};
+  return { high: numberValue(row.high), price: numberValue(row.price) || numberValue(row.current) };
 }
 
-function calcOpportunityPlan(selectedTriggers) {
-  var selected = selectedTriggers || {};
-  var ammo = getOpportunityAmmo();
-  var maxBudget = Math.min(Math.round(ammo * 0.3), OPPORTUNITY_BUDGET_CAP);
+function drawdownDone(assetId, pct) {
+  var store = (data.settings && data.settings.drawdownDone) || {};
+  return Boolean(store[assetId + "_" + pct]);
+}
+
+function calcDrawdownPlan() {
+  var ammo = drawdownAmmo();
+  var unit = Math.floor(ammo / 3);
   var total = totals();
   var items = [];
-  var activeItems = [];
-
   DRAWDOWN_RULES.forEach(function (rule) {
     var asset = data.assets.find(function (a) { return a.id === rule.assetId; });
     if (!asset) return;
-    rule.triggers.forEach(function (trigger) {
-      var key = opportunityTriggerKey(rule.assetId, trigger.pct);
-      if (!selected[key]) return;
-      var blocked = false;
-      var reason = "";
-      if (asset.layer === "投机层" && total.specRatio >= 0.10) {
-        blocked = true;
-        reason = "投机层已达10%，暂停";
-      } else if (String(asset.status || "") === "paused:manual") {
-        blocked = true;
-        reason = "已手动暂停";
-      }
-      var item = {
-        key: key,
-        assetId: asset.id,
-        name: asset.name,
-        layer: asset.layer,
-        triggerPct: trigger.pct,
-        units: trigger.units,
-        amount: 0,
-        blocked: blocked,
-        reason: reason,
-        note: blocked ? reason : opportunityDestinationLabel(asset),
-      };
-      items.push(item);
-      if (!blocked) activeItems.push(item);
+    var input = drawdownInputs(rule.assetId);
+    var dropPct = input.high > 0 && input.price > 0 ? ((input.high - input.price) / input.high) * 100 : NaN;
+    var hitIndex = -1;
+    if (Number.isFinite(dropPct)) {
+      rule.triggers.forEach(function (trigger, index) { if (dropPct >= trigger.pct) hitIndex = index; });
+    }
+    var trigger = hitIndex >= 0 ? rule.triggers[hitIndex] : null;
+    var blocked = asset.layer === "投机层" && total.specRatio >= 0.10;
+    var executed = trigger ? drawdownDone(rule.assetId, trigger.pct) : false;
+    items.push({
+      assetId: rule.assetId,
+      name: rule.name || asset.name,
+      assetName: asset.name,
+      high: input.high,
+      price: input.price,
+      dropPct: dropPct,
+      hitIndex: hitIndex,
+      trigger: trigger,
+      units: trigger ? trigger.units : 0,
+      amount: trigger ? Math.round(unit * trigger.units) : 0,
+      blocked: blocked,
+      executed: executed,
+      reason: blocked ? "投机层已达 10%，这一档不买" : (executed ? "这一档已执行过，同一档不重复提示" : ""),
     });
   });
-
-  var totalUnits = activeItems.reduce(function (s, item) { return s + numberValue(item.units); }, 0);
-  var suggestedTotal = 0;
-  if (maxBudget > 0 && totalUnits > 0) {
-    var unitAmount = Math.floor(maxBudget / totalUnits);
-    activeItems.forEach(function (item, index) {
-      var isLast = index === activeItems.length - 1;
-      var remaining = Math.max(maxBudget - suggestedTotal, 0);
-      var amount = isLast ? remaining : Math.min(Math.round(unitAmount * item.units), remaining);
-      item.amount = amount;
-      suggestedTotal += amount;
-    });
-  }
-
-  return {
-    ammo: ammo,
-    maxBudget: maxBudget,
-    suggestedTotal: suggestedTotal,
-    totalUnits: totalUnits,
-    items: items,
-    specRatio: total.specRatio,
-  };
+  return { ammo: ammo, unit: unit, items: items, specRatio: total.specRatio };
 }
 
-function selectedOpportunityTriggers() {
-  var selected = {};
-  document.querySelectorAll("#opportunityChecker input[data-trigger-key]").forEach(function (input) {
-    if (input.checked) selected[input.getAttribute("data-trigger-key")] = true;
-  });
-  return selected;
-}
-
-function renderOpportunityChecker() {
+function renderDrawdownChecker() {
   var wrap = document.querySelector("#opportunityChecker");
   if (!wrap) return;
   var panel = wrap.querySelector(".opportunity-panel");
   var keepOpen = !!(panel && panel.open);
-  var selected = selectedOpportunityTriggers();
-  var plan = calcOpportunityPlan(selected);
-  if (Object.keys(selected).length) keepOpen = true;
-
-  if (plan.ammo <= 0) {
-    wrap.innerHTML =
-      '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + '>' +
-        '<summary><span>机会补仓检查：只在明显回撤时打开</span><small>本月没有可用弹药</small></summary>' +
-        '<div class="opportunity-empty">现金层未超过应急金目标，先不动用弹药。请先在资产页更新现金层市值。</div>' +
-      '</details>';
-    return;
-  }
-
-  var controls = DRAWDOWN_RULES.map(function (rule) {
-    var asset = data.assets.find(function (a) { return a.id === rule.assetId; });
-    if (!asset) return "";
-    var blockedText = "";
-    if (asset.layer === "投机层" && plan.specRatio >= 0.10) blockedText = "投机层已达10%，暂停";
-    else if (String(asset.status || "") === "paused:manual") blockedText = "已手动暂停";
-    var triggerHtml = rule.triggers.map(function (trigger) {
-      var key = opportunityTriggerKey(rule.assetId, trigger.pct);
-      var checked = selected[key] ? " checked" : "";
-      var disabled = blockedText ? " disabled" : "";
-      return '<label class="opportunity-trigger">' +
-        '<input type="checkbox" data-trigger-key="' + esc(key) + '"' + checked + disabled + '>' +
-        '<span>跌 ' + trigger.pct + '%+ <small>' + trigger.units + '份</small></span>' +
-      '</label>';
-    }).join("");
-    return '<div class="opportunity-asset">' +
-      '<div><b>' + esc(asset.name) + '</b><small>' + esc(opportunityDestinationLabel(asset)) + (blockedText ? " · " + esc(blockedText) : "") + '</small></div>' +
-      '<div class="opportunity-triggers">' + triggerHtml + '</div>' +
-    '</div>';
+  var plan = calcDrawdownPlan();
+  var rows = plan.items.map(function (item) {
+    var hitText = Number.isFinite(item.dropPct)
+      ? (item.hitIndex >= 0
+        ? "第 " + (item.hitIndex + 1) + " 档（-" + item.dropPct.toFixed(1) + "%）"
+        : "未到第 1 档（-" + item.dropPct.toFixed(1) + "%）")
+      : "填入 52 周最高价与现价后自动计算";
+    var action = item.trigger
+      ? (item.blocked ? item.reason : (item.executed ? "这一档已执行过" : "转 " + item.units + " 份 = " + money(item.amount)))
+      : "—";
+    var doneBox = item.trigger
+      ? '<label class="drawdown-done-box"><input type="checkbox" data-dd-done="' + esc(item.assetId + "_" + item.trigger.pct) + '"' + (item.executed ? " checked" : "") + ">已执行</label>"
+      : "";
+    return '<div class="drawdown-row' + (item.blocked ? " blocked" : "") + '">' +
+      '<div class="drawdown-name"><b>' + esc(item.name) + "</b><small>" + esc(item.assetName) + "</small></div>" +
+      '<label class="drawdown-input">52 周最高<input type="number" step="0.001" data-dd-id="' + esc(item.assetId) + '" data-dd-field="high" value="' + (item.high || "") + '" placeholder="—"></label>' +
+      '<label class="drawdown-input">现价<input type="number" step="0.001" data-dd-id="' + esc(item.assetId) + '" data-dd-field="price" value="' + (item.price || "") + '" placeholder="—"></label>' +
+      '<div class="drawdown-hit">' + esc(hitText) + "</div>" +
+      '<div class="drawdown-done">' + esc(action) + "</div>" +
+      doneBox +
+    "</div>";
   }).join("");
-
-  var itemsHtml = plan.items.length
-    ? plan.items.map(function (item) {
-      var amount = item.blocked ? "¥0" : money(item.amount);
-      var note = item.blocked ? item.reason : item.note;
-      return '<div class="opportunity-result-row' + (item.blocked ? " blocked" : "") + '">' +
-        '<span>' + esc(item.name) + ' <small>跌 ' + item.triggerPct + '%+</small></span>' +
-        '<strong>' + amount + '</strong>' +
-        '<em>' + esc(note) + '</em>' +
-      '</div>';
-    }).join("")
-    : '<div class="opportunity-empty">勾选已确认的回撤条件后显示建议金额。</div>';
-
   wrap.innerHTML =
-    '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + '>' +
-      '<summary><span>机会补仓检查：只在明显回撤时打开</span><small>可选，不是每月必看</small></summary>' +
+    '<details class="opportunity-panel"' + (keepOpen ? " open" : "") + ">" +
+      "<summary><span>回撤检查器：填 52 周最高价和现价</span><small>只在明显回撤时打开</small></summary>" +
       '<div class="opportunity-metrics">' +
-        '<div><span>可用弹药</span><strong>' + money(plan.ammo) + '</strong><small>现金层 - 应急金目标</small></div>' +
-        '<div><span>本次建议最多动用</span><strong>' + money(plan.maxBudget) + '</strong><small>30%弹药，封顶 ' + money(OPPORTUNITY_BUDGET_CAP) + '</small></div>' +
-        '<div><span>当前建议</span><strong>' + money(plan.suggestedTotal) + '</strong><small>只显示，不保存</small></div>' +
-      '</div>' +
-      '<div class="opportunity-note">请先在资产页更新现金层市值。App 不判断行情，只按你勾选的回撤纪律计算金额。</div>' +
-      '<div class="opportunity-list">' + controls + '</div>' +
-      '<div class="opportunity-results">' + itemsHtml + '</div>' +
-    '</details>';
-
-  wrap.querySelectorAll("input[data-trigger-key]").forEach(function (input) {
-    input.addEventListener("change", renderOpportunityChecker);
+        "<div><span>弹药罐余额</span><strong>" + money(plan.ammo) + "</strong><small>投资组合里的现金层</small></div>" +
+        "<div><span>1 份 =</span><strong>" + money(plan.unit) + "</strong><small>弹药罐余额 ÷ 3，三档正好用完</small></div>" +
+      "</div>" +
+      '<div class="opportunity-note">回撤 = 从 52 周最高收盘价算起的跌幅，券商 App 里能直接看到。App 不接行情，只按你填的数字算；已执行过的档位可以打勾，同一档不重复提示。</div>' +
+      '<div class="drawdown-panel">' + rows + "</div>" +
+    "</details>";
+  wrap.querySelectorAll("input[data-dd-id]").forEach(function (input) {
+    input.addEventListener("change", function () {
+      var id = input.getAttribute("data-dd-id");
+      var field = input.getAttribute("data-dd-field");
+      var value = parseFloat(input.value);
+      if (!data.settings) data.settings = {};
+      if (!isPlainRecord(data.settings.drawdownInputs)) data.settings.drawdownInputs = {};
+      if (!isPlainRecord(data.settings.drawdownInputs[id])) data.settings.drawdownInputs[id] = {};
+      data.settings.drawdownInputs[id][field] = Number.isFinite(value) ? value : 0;
+      if (!saveData()) return;
+      renderDrawdownChecker();
+    });
+  });
+  wrap.querySelectorAll("input[data-dd-done]").forEach(function (input) {
+    input.addEventListener("change", function () {
+      var key = input.getAttribute("data-dd-done");
+      if (!data.settings) data.settings = {};
+      if (!isPlainRecord(data.settings.drawdownDone)) data.settings.drawdownDone = {};
+      if (input.checked) data.settings.drawdownDone[key] = true;
+      else delete data.settings.drawdownDone[key];
+      if (!saveData()) return;
+      renderDrawdownChecker();
+    });
   });
 }
 
 function saveAllocation() {
   var inputs = getAllocInputs();
-  if (inputs.income <= 0) {
+  if (inputs.income <= 0 && !(inputs.expat && inputs.usdIncome > 0)) {
     alert("请先填写月收入");
     return;
   }
@@ -1975,10 +2637,7 @@ function saveAllocation() {
   var currentMonth = data.monthly.find(function (m) { return m.month === currentKey; });
 
   var effectiveMode = allocState.mode;
-  if (allocState.mode === "修正" && result.totalAssets === 0) {
-    effectiveMode = "标准";
-  }
-  var modeForDisplay = effectiveMode;
+  if (allocState.mode === "修正" && result.totalAssets === 0) effectiveMode = "标准";
 
   var allocationPlan = result.products.map(function (p) {
     return {
@@ -1990,10 +2649,11 @@ function saveAllocation() {
       amount: p.amount,
       skipped: p.skipped,
       reason: p.reason || "",
-      bufferTo: p.bufferTo || "",
-      bufferRedirected: p.bufferRedirected || 0,
-      bufferUnavailable: p.bufferUnavailable || 0,
-      bufferIncoming: p.bufferIncoming || 0,
+      channel: p.channel || "",
+      currency: p.currency || "CNY",
+      premium: Number.isFinite(p.premium) ? p.premium : null,
+      premiumWaiting: p.premiumWaiting || 0,
+      gapAmount: p.gapAmount || 0,
     };
   });
 
@@ -2011,16 +2671,31 @@ function saveAllocation() {
       allocatedTotal: result.allocatedTotal,
       actualRemainingCash: result.actualRemainingCash,
       remainingCash: result.cashflowAvailable - result.investBase,
-      bufferedAllocTotal: result.bufferedAllocTotal,
-      unbufferedCash: result.unbufferedCash,
+      emergencyAmount: result.emergency.amount,
+      emergencyGoal: result.emergency.goal,
+      emergencyFull: result.emergency.full,
+      studyAmount: result.study.amount,
+      studyEnabled: result.study.enabled,
+      portfolioBudget: result.portfolioBudget,
+      waitingFromPremium: result.waitingFromPremium,
       speculativeRatio: result.speculativeRatio,
       speculativePaused: result.speculativePaused,
+      expat: result.expat ? {
+        fxRate: result.expat.fxRate,
+        usdPool: result.expat.usdPool,
+        usdAllocated: result.expat.usdAllocated,
+        usdLeftover: result.expat.usdLeftover,
+        ammoTopUp: result.expat.ammoTopUp,
+        suggestConvert: result.expat.suggestConvert,
+      } : null,
     },
     allocationMode: allocState.mode,
     effectiveAllocationMode: effectiveMode,
     reserve: inputs.reserve,
     savingRate: inputs.savingRatePct / 100,
-    allocationNote: "本月计划投资 " + money(result.allocatedTotal) + "，储蓄率 " + inputs.savingRatePct + "%，模式：" + modeForDisplay,
+    usdIncome: inputs.expat ? inputs.usdIncome : 0,
+    fxRate: inputs.fxRate,
+    allocationNote: "本月计划投资 " + money(result.allocatedTotal) + "，储蓄率 " + inputs.savingRatePct + "%，模式：" + effectiveMode,
     allocationCreatedAt: now.toISOString(),
     invested: currentMonth ? currentMonth.invested || 0 : 0,
     monthEndAssets: currentMonth ? currentMonth.monthEndAssets || 0 : 0,
@@ -2068,12 +2743,68 @@ document.addEventListener("DOMContentLoaded", function () {
   var expenseEl = document.querySelector("#allocExpense");
   var reserveEl = document.querySelector("#allocReserve");
   var savingRateEl = document.querySelector("#allocSavingRate");
+  [incomeEl, expenseEl, reserveEl, savingRateEl,
+    document.querySelector("#allocUsdIncome"),
+    document.querySelector("#allocFxRate"),
+    document.querySelector("#allocStudyRatio")].forEach(function (el) {
+    if (el) el.addEventListener("input", scheduleAllocRebuild);
+  });
 
-  if (incomeEl) {
-    incomeEl.addEventListener("input", scheduleAllocRebuild);
-    expenseEl.addEventListener("input", scheduleAllocRebuild);
-    reserveEl.addEventListener("input", scheduleAllocRebuild);
-    savingRateEl.addEventListener("input", scheduleAllocRebuild);
+  var expatEl = document.querySelector("#allocExpatToggle");
+  if (expatEl) {
+    expatEl.checked = Boolean(data.settings && data.settings.expatMode);
+    expatEl.addEventListener("change", function () {
+      if (!data.settings) data.settings = {};
+      data.settings.expatMode = expatEl.checked;
+      if (!saveData()) return;
+      render();
+    });
+  }
+
+  var minCommEl = document.querySelector("#allocMinCommToggle");
+  if (minCommEl) {
+    minCommEl.checked = !(data.settings && data.settings.minCommission5 === false);
+    minCommEl.addEventListener("change", function () {
+      if (!data.settings) data.settings = {};
+      data.settings.minCommission5 = minCommEl.checked;
+      if (!saveData()) return;
+      refreshAllocation();
+    });
+  }
+
+  var studyToggle = document.querySelector("#allocStudyToggle");
+  if (studyToggle) {
+    studyToggle.checked = studyFundEnabled();
+    studyToggle.addEventListener("change", function () {
+      if (!data.settings) data.settings = {};
+      data.settings.studyFundEnabled = studyToggle.checked;
+      if (!saveData()) return;
+      render();
+    });
+  }
+
+  var studyRatioInput = document.querySelector("#allocStudyRatio");
+  if (studyRatioInput) {
+    studyRatioInput.value = studyFundRatioPct();
+    studyRatioInput.addEventListener("change", function () {
+      if (!data.settings) data.settings = {};
+      data.settings.studyFundRatio = clamp(numberValue(studyRatioInput.value), 0, 50);
+      if (!saveData()) return;
+      refreshAllocation();
+    });
+  }
+
+  var allocFxInput = document.querySelector("#allocFxRate");
+  if (allocFxInput) {
+    allocFxInput.value = fxRate();
+    allocFxInput.addEventListener("change", function () {
+      var value = parseFloat(allocFxInput.value);
+      if (!Number.isFinite(value) || value <= 0) return;
+      if (!data.settings) data.settings = {};
+      data.settings.fxRate = value;
+      if (!saveData()) return;
+      render();
+    });
   }
 
   var correctBtn = document.querySelector("#allocModeCorrect");
@@ -2096,10 +2827,26 @@ document.addEventListener("DOMContentLoaded", function () {
   var saveBtn = document.querySelector("#allocSaveBtn");
   if (saveBtn) saveBtn.addEventListener("click", saveAllocation);
 
-  ["#fireAnnualExpense", "#fireCurrentAge", "#fireTargetAge", "#fireInflationRate", "#fireRealReturn", "#fireSupplementIncome", "#fireExpectedReturn", "#fireMonthlyContribution", "#fireDomesticMonthly", "#fireDomesticMonths", "#fireOverseasMonthly", "#fireSetupCost"].forEach(function (selector) {
+  ["#fireAnnualExpense", "#fireCurrentAge", "#fireTargetAge", "#fireInflationRate", "#fireRealReturn",
+    "#fireSupplementIncome", "#fireExpectedReturn", "#fireMonthlyContribution", "#fireDomesticMonthly",
+    "#fireDomesticMonths", "#fireOverseasMonthly", "#fireSetupCost", "#fireUsdSubsidy", "#fireFxRate",
+    "#fireSavingGrowth", "#fireDaysAbroad", "#fireStudyRatio", "#fireReturnYears"].forEach(function (selector) {
     var input = document.querySelector(selector);
     if (input) input.addEventListener("input", renderFire);
   });
+
+  var returnHomeEl = document.querySelector("#fireReturnHome");
+  var returnYearsEl = document.querySelector("#fireReturnYears");
+  var syncReturnYears = function () {
+    if (returnYearsEl) returnYearsEl.disabled = !(returnHomeEl && returnHomeEl.checked);
+  };
+  if (returnHomeEl) {
+    returnHomeEl.addEventListener("change", function () {
+      syncReturnYears();
+      renderFire();
+    });
+    syncReturnYears();
+  }
 
   var linkToggle = document.querySelector("#linkInvestToggle");
   if (linkToggle) {
@@ -2109,6 +2856,8 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!saveData()) render();
     });
   }
+
+  renderTripChecklist();
 });
 
 function fieldsToHtml(fields, values) {
@@ -2169,7 +2918,12 @@ function openEditor(config) {
 
 function openAssetEditor(id) {
   const isNew = !id;
-  const raw = isNew ? { id: crypto.randomUUID(), layer: "现金层", element: "水", name: "", type: "", target: 0.05, value: 0, cost: 0, updated: today(), note: "", status: "available", bufferDestinationId: "", bufferDestination: "" } : data.assets.find((x) => x.id === id);
+  const raw = isNew ? {
+    id: crypto.randomUUID(), layer: "现金层", element: "水", name: "", type: "", target: 0.05,
+    value: 0, valueUsd: 0, cost: 0, updated: today(), note: "", status: "available", jar: "investment",
+    code: "", feePct: 0, channel: "场外", buyStatus: "正常", buyStatusChecked: "", waitingSince: "",
+    bufferDestinationId: "", bufferDestination: "",
+  } : data.assets.find((x) => x.id === id);
   const item = { ...raw, target: Math.round(numberValue(raw.target) * 100), status: raw.status || "available", bufferDestinationId: raw.bufferDestinationId || "", bufferDestination: raw.bufferDestination || "" };
   // 暂存去向候选：所有 available 资产（排除自己），加一个空选项
   const destOptions = [{ value: "", label: "不指定" }].concat(
@@ -2184,13 +2938,26 @@ function openAssetEditor(id) {
     collection: "assets",
     fields: [
       { key: "name", label: "产品名称" },
-      { key: "layer", label: "层级", type: "select", options: ["现金层", "防御层", "生财层", "成长层", "投机层"] },
-      { key: "element", label: "五行", type: "select", options: ["金", "水", "土", "火", "金水"] },
+      { key: "jar", label: "属于哪个罐子", type: "select", options: [
+        { value: "investment", label: "投资组合" },
+        { value: "emergency", label: "应急罐" },
+        { value: "study", label: "读书基金" },
+        { value: "waiting", label: "等候罐" },
+      ], hint: "只有「投资组合」参与比例、偏离度和分配计算" },
+      { key: "layer", label: "层级", type: "select", options: ["现金层", "防御层", "生财层", "成长层", "投机层", "罐子"] },
+      { key: "element", label: "五行", type: "select", options: ["金", "水", "土", "火", "木", "金水", ""] },
       { key: "type", label: "产品类型" },
       { key: "target", label: "目标占比（%）", type: "number", pctInput: true },
-      { key: "status", label: "状态", type: "select", options: ["available", "buffered", "paused:manual"], hint: "buffered=暂存到下方指定产品；paused:manual=手动暂停，本月不投" },
+      { key: "code", label: "产品代码" },
+      { key: "feePct", label: "年费率（%）", type: "number" },
+      { key: "channel", label: "在哪买", type: "select", options: ["场内", "场外", "看溢价", ""] },
+      { key: "buyStatus", label: "能不能买", type: "select", options: ["正常", "限购", "暂停申购", "溢价过高"] },
+      { key: "buyStatusChecked", label: "上次检查日期", type: "date" },
+      { key: "status", label: "状态", type: "select", options: ["available", "buffered", "paused:manual"], hint: "buffered=暂存到下方指定产品（旧机制，v8.0 不再用）；paused:manual=手动暂停，本月不投" },
       { key: "bufferDestinationId", label: "暂存去向（仅 buffered 时生效）", type: "select", options: destOptions },
-      { key: "value", label: "当前市值", type: "number" },
+      { key: "value", label: "当前市值（人民币）", type: "number" },
+      { key: "valueUsd", label: "当前市值（美元，读书基金/等候罐用）", type: "number" },
+      { key: "waitingSince", label: "等候罐开始等待的月份（如 2026/12）" },
       { key: "cost", label: "累计投入", type: "number" },
       { key: "updated", label: "更新日期", type: "date" },
       { key: "note", label: "备注", type: "textarea" },
@@ -2272,11 +3039,7 @@ function hasAllocationPlan(month) {
   return !!(month && Array.isArray(month.allocationPlan) && month.allocationPlan.length > 0);
 }
 
-function cashLayerValue() {
-  return data.assets
-    .filter(function (a) { return a.layer === "现金层" && isAvailableAsset(a); })
-    .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
-}
+// 弹药罐 = 投资组合里的现金层（货币基金），见 drawdownAmmo()
 
 function isUpdatedThisMonth(dateText) {
   var d = String(dateText || "").slice(0, 10);
@@ -2301,12 +3064,70 @@ function actionItem(label, detail, viewName, buttonText) {
   return { label: label, detail: detail, viewName: viewName, buttonText: buttonText || "去处理" };
 }
 
+// 各层实际占比与目标的偏离（任务 5）
+function layerDeviations() {
+  var items = investmentAssets();
+  var total = items.reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+  if (total <= 0) return [];
+  return V8_LAYERS.map(function (layer) {
+    var value = items.filter(function (a) { return a.layer === layer.name; })
+      .reduce(function (s, a) { return s + numberValue(a.value); }, 0);
+    var ratio = value / total;
+    return {
+      name: layer.name,
+      label: layer.label,
+      target: layer.target,
+      cap: layer.cap,
+      ratio: ratio,
+      gap: ratio - layer.target,
+      amount: Math.round(Math.abs(ratio - layer.target) * total),
+    };
+  }).filter(function (d) { return d.target > 0; });
+}
+
+// 再平衡（修剪）提醒：每年 1 月年度复盘；任一层偏离 ±5 个百分点；投机层超 10% 上限
+function rebalanceAdvice() {
+  var out = [];
+  var now = new Date();
+  if (now.getMonth() === 0) {
+    out.push({ label: "年度复盘：修剪 + 按汇率重算 FIRE", detail: "每年 1 月做一次：哪一层偏离目标超过 5 个百分点就卖多买少，并按当年汇率重算 FIRE。", view: "rules", button: "看规则" });
+  }
+  var deviations = layerDeviations();
+  deviations.forEach(function (d) {
+    if (d.cap && d.ratio > d.cap) return; // 投机层超上限由下面单独提醒
+    if (d.gap > 0.05) {
+      out.push({ label: d.label + "层偏高 " + pct(d.gap) + "，建议修剪", detail: "卖出约 " + money(d.amount) + "，调回目标 " + pct(d.target) + "。", view: "assets", button: "去资产" });
+    } else if (d.gap < -0.05) {
+      out.push({ label: d.label + "层偏低 " + pct(-d.gap) + "，建议补回", detail: "买入约 " + money(d.amount) + "，调回目标 " + pct(d.target) + "。", view: "assets", button: "去资产" });
+    }
+  });
+  var spec = deviations.find(function (d) { return d.name === "投机层"; });
+  if (spec && spec.ratio > 0.10) {
+    var sellAmount = Math.round((spec.ratio - 0.10) * totals().value);
+    out.push({ label: "投机层超过上限，卖回 10%", detail: "当前 " + pct(spec.ratio) + "，卖出约 " + money(sellAmount) + " 把投机层调回 10%。", view: "assets", button: "去资产" });
+  }
+  return out;
+}
+
 function buildTodayActions() {
   var month = currentMonthRecord();
   var t = totals();
-  var goal = numberValue(data.settings && data.settings.emergencyGoal) || defaultData.settings.emergencyGoal;
+  var goal = emergencyGoal();
   var now = new Date();
   var actions = [];
+
+  // 任务 9：首次使用引导（所有资产都是 0 时）
+  if (t.grandTotal <= 0 && !data.entries.length) {
+    actions.push(actionItem("第 1 步：在「资产」里新增应急罐，填入已有金额", "先把救命钱记下来，其他都往后放。", "assets", "去资产"));
+    actions.push(actionItem("第 2 步：在「分配」页填本月收入和支出", "工资到账后先生成本月分配计划。", "allocate", "去分配"));
+    actions.push(actionItem("第 3 步：每月发薪日回来，按分配结果执行", "发薪日即投资日；买入后到「随手记」记一笔。", "ledger", "去随手记"));
+    return actions.slice(0, 6);
+  }
+
+  // 任务 5：修剪/再平衡提醒（平时不显示任何买卖建议）
+  rebalanceAdvice().forEach(function (item) {
+    actions.push(actionItem(item.label, item.detail, item.view, item.button || "去处理"));
+  });
 
   if (!hasAllocationPlan(month)) {
     actions.push(actionItem("本月计划未保存", "工资到账后先生成本月分配计划。", "allocate", "去分配"));
@@ -2314,27 +3135,19 @@ function buildTodayActions() {
     actions.push(actionItem("计划已保存，买入后记得去随手记", "计划不等于执行，真实买入后再记录。", "ledger", "去随手记"));
   }
 
-  if (now.getDate() >= 25 && (!month || numberValue(month.monthEndAssets) <= 0 || !data.assets.some(function (a) { return isUpdatedThisMonth(a.updated); }))) {
+  if (now.getDate() >= 25 && (!month || numberValue(month.monthEndAssets) <= 0 || !investmentAssets().some(function (a) { return isUpdatedThisMonth(a.updated); }))) {
     actions.push(actionItem("月底记得更新市值", "每月 25 号后对照账户批量更新资产市值。", "assets", "去资产"));
   }
 
-  if (cashLayerValue() < goal) {
-    actions.push(actionItem("应急金未达标，本月优先补现金层", "出国前目标 " + money(goal) + "，先保命再投资。", "monthly", "看月度"));
-  }
-
-  if (t.specRatio >= 0.10) {
-    actions.push(actionItem("投机层已达10%，暂停新增", "纳指/科技/自选本月不再加钱。", "assets", "看资产"));
-  }
-
-  if (now <= new Date("2026-09-12T23:59:59")) {
-    actions.push(actionItem("冻结期内只执行，不改比例", "收官版只执行、回填真实信息和修 bug。", "rules", "看规则"));
+  if (emergencyValue() < goal) {
+    actions.push(actionItem("应急罐没满，本月优先补满", "先打地基：还差 " + money(goal - emergencyValue()) + "，存满之前其他步骤跳过。", "allocate", "去分配"));
   }
 
   if (!actions.length) {
     actions.push(actionItem("今天没有必须处理的动作", "保持月度节奏，别为了操作而操作。", "rules", "看纪律"));
   }
 
-  return actions.slice(0, 5);
+  return actions.slice(0, 6);
 }
 
 function renderTodayActions() {
@@ -2389,66 +3202,68 @@ document.querySelector("#marketValueForm")?.addEventListener("submit", (event) =
 });
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
-  if (!confirm("套用22岁外派配置：按新方案更新资产的目标占比、层级和暂存状态。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值/累计投入/更新日期/备注\n• 名称匹配的产品就地更新；新增的会创建；不在新方案里的会保留但目标设为0（你可以手动删除或调整）\n• QDII 类（标普500/全球医疗/纳指/矿股/自选）会被标记为 buffered → 货币基金，国内阶段自动暂存\n\n确定继续吗？")) return;
+  if (!confirm("套用 v8.0 配置：按新方案更新资产的目标占比、层级、产品代码和罐子归属。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值 / 累计投入 / 更新日期 / 备注\n• id 或名称匹配的产品就地更新；新增的会创建\n• 不在新方案里的产品会保留但目标设为 0（你可以手动删除或调整）\n• 应急罐 / 读书基金 / 等候罐会补齐，已有金额不动\n\n确定继续吗？")) return;
+  var byId = {};
   var byName = {};
-  data.assets.forEach(function (a) { byName[a.name] = a; });
+  data.assets.forEach(function (a) { byId[a.id] = a; byName[a.name] = a; });
   var nextAssets = [];
-  HALF_FIRE_PLAN.forEach(function (row) {
-    var existing = byName[row.name];
+  V8_PRODUCTS.forEach(function (row) {
+    var existing = byId[row.id] || byName[row.name];
     if (existing) {
       nextAssets.push(Object.assign({}, existing, {
-        layer: row.layer,
-        element: row.element,
-        type: row.type,
-        target: row.target,
-        status: row.status,
-        bufferDestinationId: row.bufferDestinationId || "",
-        bufferDestination: row.bufferDestination || "",
+        layer: row.layer, element: row.element, name: row.name, type: row.type, target: row.target,
+        status: "available", jar: "investment", code: row.code, feePct: row.feePct,
+        channel: row.channel, buyStatus: row.buyStatus,
+        bufferDestinationId: "", bufferDestination: "",
       }));
-      delete byName[row.name];
+      delete byId[existing.id];
+      delete byName[existing.name];
     } else {
-      nextAssets.push({
-        id: row.id || crypto.randomUUID(),
-        layer: row.layer,
-        element: row.element,
-        name: row.name,
-        type: row.type,
-        target: row.target,
-        status: row.status,
-        bufferDestinationId: row.bufferDestinationId || "",
-        bufferDestination: row.bufferDestination || "",
-        value: 0,
-        cost: 0,
-        updated: "",
-        note: "",
-      });
+      nextAssets.push(makeProductAsset(row));
     }
   });
-  // 旧方案有但新方案没有的产品：保留但目标占比设为0，且改回 available 避免被无意 buffered
-  Object.keys(byName).forEach(function (name) {
-    var orphan = byName[name];
-    nextAssets.push(Object.assign({}, orphan, { target: 0, status: "available", bufferDestinationId: "", bufferDestination: "", note: (orphan.note ? orphan.note + "｜" : "") + "已不在新方案，建议清仓后删除" }));
+  Object.keys(byId).forEach(function (id) {
+    var orphan = byId[id];
+    if (V8_NON_INVEST_JARS.indexOf(assetJar(orphan)) >= 0) {
+      nextAssets.push(orphan);
+      return;
+    }
+    nextAssets.push(Object.assign({}, orphan, {
+      target: 0, status: "available", bufferDestinationId: "", bufferDestination: "",
+      note: (orphan.note ? orphan.note + "｜" : "") + "已不在 v8.0 方案，建议清仓后删除",
+    }));
+  });
+  ["emergency", "study", "waiting"].forEach(function (jar) {
+    if (!nextAssets.some(function (a) { return assetJar(a) === jar; })) nextAssets.push(makeJarAsset(jar));
   });
   data.assets = nextAssets;
   syncBufferDestinations(data.assets);
   if (!saveData()) return;
   render();
-  alert("新配置已套用。建议去「资产」Tab 检查每项的层级、目标占比和状态，确认无误后开始按新比例补仓。");
+  alert("v8.0 配置已套用。建议去「资产」Tab 检查每项的罐子、层级、目标占比和状态。");
 });
 
-document.querySelector("#unlockBufferedBtn")?.addEventListener("click", () => {
-  if (!confirm("把所有「暂存中」的资产改为「可买」状态。出海开通海外渠道后用。会清空它们的暂存去向。当前市值/累计投入不变。确定吗？")) return;
-  var count = 0;
-  data.assets.forEach(function (asset) {
-    if (!isBufferedStatus(asset.status)) return;
-    asset.status = "available";
-    asset.bufferDestinationId = "";
-    asset.bufferDestination = "";
-    count += 1;
+// 出海清单打勾（任务 6.4）：状态存 settings.tripChecklist，刷新页面后仍在
+function renderTripChecklist() {
+  var store = (data.settings && data.settings.tripChecklist) || {};
+  document.querySelectorAll("input[data-trip-key]").forEach(function (input) {
+    var key = input.getAttribute("data-trip-key");
+    input.checked = Boolean(store[key]);
+    var label = input.closest(".trip-item");
+    if (label) label.classList.toggle("done", input.checked);
   });
-  if (!saveData()) return;
-  render();
-  alert("已解锁 " + count + " 个暂存资产。后续分配会按可买资产正常计算。");
+}
+
+document.querySelectorAll("input[data-trip-key]").forEach(function (input) {
+  input.addEventListener("change", function () {
+    var key = input.getAttribute("data-trip-key");
+    if (!data.settings) data.settings = {};
+    if (!isPlainRecord(data.settings.tripChecklist)) data.settings.tripChecklist = {};
+    if (input.checked) data.settings.tripChecklist[key] = true;
+    else delete data.settings.tripChecklist[key];
+    if (!saveData()) return;
+    renderTripChecklist();
+  });
 });
 
 function refreshSyncDialog() {
@@ -2668,24 +3483,29 @@ function openMarketValueEditor() {
     return;
   }
   listEl.innerHTML = data.assets.map(function (a) {
+    var jar = assetJar(a);
     var cost = numberValue(a.cost);
     var val = numberValue(a.value);
-    var profit = val - cost;
-    var profitClass = profit > 0 ? "mv-up" : (profit < 0 ? "mv-down" : "");
+    var jarName = (V8_JARS.find(function (j) { return j.key === jar; }) || {}).name || "";
+    var detail = jar === "investment"
+      ? "累计投入 " + money(cost) + (val ? " · 现" + money(val) + ' <span class="' + (val - cost > 0 ? "mv-up" : val - cost < 0 ? "mv-down" : "") + '">' + (val - cost >= 0 ? "+" : "") + money(val - cost) + "</span>" : "")
+      : esc(jarName) + (val || numberValue(a.valueUsd) ? " · 现" + money(val) : "");
+    var usdRow = (jar === "study" || jar === "waiting")
+      ? '<input class="mv-cell mv-usd" type="number" inputmode="decimal" step="0.01" data-usd-id="' + esc(a.id) + '" value="' + (numberValue(a.valueUsd) || "") + '" placeholder="美元">'
+      : "";
     return '<div class="mv-row">' +
-      '<div class="mv-name"><b>' + esc(a.name) + '</b>' +
-        '<small>累计投入 ' + money(cost) + (val ? ' · 现' + money(val) + ' <span class="' + profitClass + '">' + (profit >= 0 ? "+" : "") + money(profit) + '</span>' : '') + '</small>' +
-      '</div>' +
+      '<div class="mv-name"><b>' + esc(a.name) + '</b><small>' + detail + '</small></div>' +
       '<input class="mv-cell" type="number" inputmode="decimal" step="0.01" data-asset-id="' + esc(a.id) + '" value="' + (val || "") + '" placeholder="0">' +
+      usdRow +
     '</div>';
   }).join("");
   dlg.returnValue = "";
   dlg.showModal();
 }
 
-// 保存批量市值：把每行输入写回对应资产的 value，并更新日期
+// 保存批量市值：把每行输入写回对应资产的 value/valueUsd，并更新日期
 function saveMarketValues() {
-  var inputs = document.querySelectorAll("#mvList .mv-cell");
+  var inputs = document.querySelectorAll("#mvList .mv-cell[data-asset-id]");
   var changed = 0;
   inputs.forEach(function (input) {
     var id = input.getAttribute("data-asset-id");
@@ -2698,13 +3518,29 @@ function saveMarketValues() {
     var rounded = Math.round(val);
     if (rounded !== numberValue(asset.value)) {
       asset.value = rounded;
-      asset.updated = today();
+      if (assetJar(asset) === "investment") asset.updated = today();
       changed += 1;
     }
   });
+  document.querySelectorAll("#mvList .mv-cell[data-usd-id]").forEach(function (input) {
+    var id = input.getAttribute("data-usd-id");
+    var asset = data.assets.find(function (a) { return a.id === id; });
+    if (!asset) return;
+    var raw = String(input.value).trim();
+    var val = raw === "" ? 0 : parseFloat(raw);
+    if (!Number.isFinite(val) || val < 0) return;
+    if (val !== numberValue(asset.valueUsd)) {
+      asset.valueUsd = val;
+      changed += 1;
+    }
+  });
+  // 等候罐第一次有钱：记下开始等待的月份，用于「已等待 N 个月」
+  jarAssets("waiting").forEach(function (a) {
+    if ((numberValue(a.value) > 0 || numberValue(a.valueUsd) > 0) && !String(a.waitingSince || "")) a.waitingSince = currentMonth();
+  });
   if (!saveData()) return false;
   render();
-  toast(changed > 0 ? "已更新 " + changed + " 只资产的市值" : "市值无变化");
+  toast(changed > 0 ? "已更新 " + changed + " 项金额" : "金额无变化");
   return true;
 }
 
@@ -2968,4 +3804,7 @@ window.addEventListener("online", function () {
 });
 
 render();
+if (window.__v8MigratedNotice) {
+  toast("本机账本已升级到 v8.0；如果还有别的设备在用旧版，请把它也升级到 v8.0 再同步");
+}
 initCloudSync();
