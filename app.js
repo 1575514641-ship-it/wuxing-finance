@@ -1176,7 +1176,7 @@ function renderJars() {
   if (jarValue("waiting") > 0) waitExtra.push("已等待 " + waitingMonths() + " 个月");
   if (waitUsd > 0) waitExtra.push("其中 " + money(waitUsd * fxRate()) + " 来自美元");
   cards.push(jarCardHtml("⏳ 等候罐", jarValue("waiting"), 0, "QDII 溢价太高、暂时买不进去的钱", waitExtra.join("｜")));
-  cards.push(jarCardHtml("📈 投资组合", portfolioValue(), 0, "长期，为 FIRE；按 v8.1 比例分配", ""));
+  cards.push(jarCardHtml("📈 投资组合", portfolioValue(), 0, "长期，为 FIRE；按 v8.2 比例分配", ""));
   wrap.innerHTML = cards.join("");
 }
 
@@ -1194,7 +1194,7 @@ function renderAssets() {
     list.innerHTML = '<div class="empty-state">' +
       '<div class="empty-icon">📊</div>' +
       '<b>还没有资产</b>' +
-      '<p>点「套用 v8.1 配置」一键导入推荐方案，或手动新增资产。</p>' +
+      '<p>点「套用 v8.2 配置」一键导入推荐方案，或手动新增资产。</p>' +
       '</div>';
     return;
   }
@@ -2221,7 +2221,8 @@ function calcAllocation(inputs) {
     var asset = n.asset;
     var buyStatus = String(asset.buyStatus || "正常");
     var entry = Object.assign({}, n, { channelAdvice: channelAdvice(asset, n.premium) });
-    if (asset.status === "paused:manual") skipped.push(Object.assign(entry, { reason: "手动暂停（份额留作现金）" }));
+    // v8.2：手动暂停与「暂停申购」同口径 —— 本月额度进等候罐，不再分给其他产品
+    if (asset.status === "paused:manual") suspended.push(Object.assign(entry, { reason: "手动暂停：本月额度进等候罐" }));
     else if (buyStatus === "暂停申购") suspended.push(Object.assign(entry, { reason: "暂停申购：本月不推荐，金额转场外或等候罐" }));
     else if (speculativePaused && asset.layer === "投机层") skipped.push(Object.assign(entry, { reason: "投机层超限暂停" }));
     // 单品硬上限（黄金 10%）：上限从 V8_PRODUCTS 的 cap 读，不在逻辑里写死
@@ -2230,7 +2231,7 @@ function calcAllocation(inputs) {
     else pool.push(entry);
   });
 
-  // 暂停申购的产品：本月不推荐，但它那份额度不走别的产品，转去场外或等候罐（说明书任务 4 验收）
+  // 暂停申购 / 手动暂停的产品：本月不推荐，但它那份额度不走别的产品，全部进等候罐（说明书任务 4 验收；v8.2 起手动暂停并入同一口径）
   var poolGap = pool.reduce(function (sum, e) { return sum + e.gapAmount; }, 0);
   var suspendedGap = suspended.reduce(function (sum, e) { return sum + e.gapAmount; }, 0);
   var allGap = poolGap + suspendedGap;
@@ -2366,9 +2367,11 @@ function calcAllocation(inputs) {
     };
   }
 
-  var manualPausedCash = skipped.reduce(function (s, entry) {
-    return entry.reason.indexOf("手动暂停") === 0 ? s + Math.round(portfolioBudget * entry.normTarget) : s;
+  // v8.2：手动暂停的份额已在等候罐里，这里按缺口占比把它单列出来（字段保留，含义改为「手动暂停对应的等候罐金额」）
+  var manualGap = suspended.reduce(function (s, entry) {
+    return entry.reason.indexOf("手动暂停") === 0 ? s + entry.gapAmount : s;
   }, 0);
+  var manualPausedCash = suspendedGap > 0 ? Math.round(waitingFromSuspended * manualGap / suspendedGap) : 0;
 
   // 按层级汇总
   var layers = {};
@@ -2492,7 +2495,7 @@ function renderJarAllocation(result) {
     rows.push('<div class="jar-split-row"><span>⏳ 等候罐</span><strong>' + money(result.waitingFromPremium + result.waitingFromSuspended) + '</strong><em>' +
       (result.waitingFromPremium > 0 ? "溢价过高 " + money(result.waitingFromPremium) : "") +
       (result.waitingFromPremium > 0 && result.waitingFromSuspended > 0 ? "；" : "") +
-      (result.waitingFromSuspended > 0 ? "暂停申购 " + money(result.waitingFromSuspended) : "") + '</em></div>');
+      (result.waitingFromSuspended > 0 ? "暂停申购 / 手动暂停 " + money(result.waitingFromSuspended) : "") + '</em></div>');
   }
   wrap.innerHTML = '<div class="checklist-title">本月分配顺序</div><div class="jar-split-grid">' + rows.join("") + '</div>';
 }
@@ -2592,7 +2595,7 @@ function refreshAllocation() {
   }
   if (inputs.minCommission5 && result.emergency.full && result.portfolioBudget > 0) hints.push("券商收最低 5 元：本月只推荐缺口最大的 1~2 只，单笔尽量不少于 3000 元。");
   if (result.waitingFromPremium > 0) hints.push("本月有 " + money(result.waitingFromPremium) + " 因溢价进等候罐。");
-  if (result.waitingFromSuspended > 0) hints.push("有 " + money(result.waitingFromSuspended) + " 因产品暂停申购转去场外或等候罐（不再分给其他产品）。");
+  if (result.waitingFromSuspended > 0) hints.push("有 " + money(result.waitingFromSuspended) + " 因产品暂停申购或手动暂停进等候罐（不再分给其他产品）。");
   if (result.expat) hints.push(result.expat.note);
   if (result.useCorrection && result.allocatedTotal === 0 && result.investBase > 0) hints.push("当前配置无优先补仓项，本月建议保留现金。原始建议投资额度：" + money(result.investBase));
   if (result.speculativePaused) hints.push("投机层已达到或超过 " + pct(speculativeCap()) + "，本月自动暂停给投机层分配新资金。");
@@ -3109,7 +3112,7 @@ function openAssetEditor(id) {
       { key: "channel", label: "在哪买", type: "select", options: ["场内", "场外", "看溢价", ""] },
       { key: "buyStatus", label: "能不能买", type: "select", options: ["正常", "限购", "暂停申购", "溢价过高"] },
       { key: "buyStatusChecked", label: "上次检查日期", type: "date" },
-      { key: "status", label: "状态", type: "select", options: ["available", "paused:manual"], hint: "available=正常；paused:manual=手动暂停，本月不投（旧 buffered 暂存机制已在 v8.1 并入「能不能买=暂停申购」）" },
+      { key: "status", label: "状态", type: "select", options: ["available", "paused:manual"], hint: "available=正常；paused:manual=手动暂停，本月额度进等候罐（旧 buffered 暂存机制已在 v8.1 并入「能不能买=暂停申购」）" },
       { key: "value", label: "当前市值（人民币）", type: "number" },
       { key: "valueUsd", label: "当前市值（美元，读书基金/等候罐用）", type: "number" },
       { key: "waitingSince", label: "等候罐开始等待的月份（如 2026/12）" },
@@ -3391,7 +3394,7 @@ document.querySelector("#marketValueForm")?.addEventListener("submit", (event) =
 });
 
 document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
-  if (!confirm("套用 v8.1 配置：按新方案更新资产的目标占比、层级、产品代码和罐子归属。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值 / 累计投入 / 更新日期 / 备注\n• id 或名称匹配的产品就地更新；新增的会创建\n• 不在新方案里的产品会保留但目标设为 0（你可以手动删除或调整）\n• 「能不能买」会按方案重置为「正常」（你手动标过的暂停申购会被清掉，套用后重新标一次）\n• 应急罐 / 读书基金 / 等候罐会补齐，已有金额不动\n\n确定继续吗？")) return;
+  if (!confirm("套用 v8.2 配置：按新方案更新资产的目标占比、层级、产品代码、费率和罐子归属。\n\n建议先点右上角「导出」保存 JSON 备份。\n\n• 不会改动当前市值 / 累计投入 / 更新日期 / 备注\n• 「能不能买」和你手动设的「状态」（手动暂停）都按现在的保留，不会被重置\n• id 或名称匹配的产品就地更新；新增的会创建\n• 不在新方案里的产品会保留但目标设为 0（你可以手动删除或调整）\n• 应急罐 / 读书基金 / 等候罐会补齐，已有金额不动\n\n确定继续吗？")) return;
   var byId = {};
   var byName = {};
   data.assets.forEach(function (a) { byId[a.id] = a; byName[a.name] = a; });
@@ -3399,10 +3402,12 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   V8_PRODUCTS.forEach(function (row) {
     var existing = byId[row.id] || byName[row.name];
     if (existing) {
+      // v8.2：只更新比例 / 层级 / 代码 / 费率 / 罐子归属；「能不能买」和手动暂停状态按用户现在的设置保留
       nextAssets.push(Object.assign({}, existing, {
         layer: row.layer, element: row.element, name: row.name, type: row.type, target: row.target,
-        status: "available", jar: "investment", code: row.code, feePct: row.feePct,
-        channel: row.channel, buyStatus: row.buyStatus,
+        status: existing.status === "paused:manual" ? "paused:manual" : "available",
+        jar: "investment", code: row.code, feePct: row.feePct,
+        channel: row.channel, buyStatus: existing.buyStatus || "正常",
         bufferDestinationId: "", bufferDestination: "",
       }));
       delete byId[existing.id];
@@ -3418,8 +3423,8 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
       return;
     }
     nextAssets.push(Object.assign({}, orphan, {
-      target: 0, status: "available", bufferDestinationId: "", bufferDestination: "",
-      note: (orphan.note ? orphan.note + "｜" : "") + "已不在 v8.1 方案，建议清仓后删除",
+      target: 0, status: orphan.status === "paused:manual" ? "paused:manual" : "available", bufferDestinationId: "", bufferDestination: "",
+      note: (orphan.note ? orphan.note + "｜" : "") + "已不在 v8.2 方案，建议清仓后删除",
     }));
   });
   ["emergency", "study", "waiting"].forEach(function (jar) {
@@ -3428,7 +3433,7 @@ document.querySelector("#applyHalfFireBtn")?.addEventListener("click", () => {
   data.assets = nextAssets;
   if (!saveData()) return;
   render();
-  alert("v8.1 配置已套用。建议去「资产」Tab 检查每项的罐子、层级、目标占比和状态。");
+  alert("v8.2 配置已套用。建议去「资产」Tab 检查每项的罐子、层级、目标占比和状态（「能不能买」按你原来的设置保留）。");
 });
 
 // 出海清单打勾（任务 6.4）：状态存 settings.tripChecklist，刷新页面后仍在

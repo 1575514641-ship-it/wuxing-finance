@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#111827">
-  <title>五行理财 v8.1</title>
+  <title>五行理财 v8.2</title>
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./styles.css">
 </head>
@@ -12,7 +12,7 @@
   <div class="app-shell">
     <header class="topbar">
       <div>
-        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v8.1</small></h1>
+        <h1>五行理财 <small style="font-size:12px;color:#999;font-weight:400">v8.2</small></h1>
         <p>少操作，多复盘，把钱留住。</p>
       </div>
       <div class="top-actions">
@@ -91,7 +91,7 @@
         </div>
         <div id="jarCards" class="jar-cards"></div>
         <div id="rebalanceTips" class="tips"></div>
-        <div class="guard-note">v8.1 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.1 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
+        <div class="guard-note">v8.2 配置：全站只有一套比例（现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%），改比例只在「套用 v8.2 配置」这一处动，平时月底更新市值即可。应急罐、读书基金、等候罐不计入投资组合的比例和偏离度。</div>
         <div id="assetList" class="card-list"></div>
       </section>
 
@@ -232,7 +232,7 @@
             <p>配置基线：现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%（上限 10%）。喜金水，忌火木。</p>
           </div>
           <div class="section-actions">
-            <button id="applyHalfFireBtn" class="primary-btn">套用 v8.1 配置</button>
+            <button id="applyHalfFireBtn" class="primary-btn">套用 v8.2 配置</button>
           </div>
         </div>
 
@@ -256,7 +256,7 @@
           <article><b>纪律｜核心</b><span>少操作就是多赚钱。先存后花。</span></article>
           <article><b>配置基线</b><span>现金 5% / 防御 35% / 生财 25% / 成长 30% / 投机 5%（上限 10%）= 100%。短视频只吸收纪律，不照搬比例。</span></article>
           <article><b>风险承受</b><span>股票类（生财 + 成长 + 投机）合计约 60%，对应最大回撤约 30%。经历过一次大跌后，才考虑把成长层提高到 35%～40%。</span></article>
-          <article><b>收官边界</b><span>v8.1 后只修 bug、回填真实信息和更新说明；规则每年 1 月最多修改一次，其余时间只执行。</span></article>
+          <article><b>收官边界</b><span>v8.1 收官后只修 bug、回填真实信息和更新说明（v8.2 即此类小修）；规则每年 1 月最多修改一次，其余时间只执行。</span></article>
           </div>
 
           <h3 class="rule-section-title">行为铁律</h3>
@@ -321,7 +321,7 @@
         <details class="rule-section">
           <summary>参考资料</summary>
 
-          <h3 class="rule-section-title">产品表（v8.1）</h3>
+          <h3 class="rule-section-title">产品表（v8.2）</h3>
           <div class="product-table-wrap">
           <table class="product-table">
             <thead><tr><th>层级</th><th>产品</th><th>代码</th><th>年费率</th><th>在哪买</th><th>能不能买</th></tr></thead>
@@ -337,7 +337,7 @@
               <tr><td>投机</td><td>华安纳斯达克100ETF</td><td>159632</td><td>0.80%</td><td>看溢价</td><td>正常</td></tr>
             </tbody>
           </table>
-          <small class="rule-note">「能不能买」（正常 / 限购 / 暂停申购 / 溢价过高）由你在资产卡片里手动更新；标记为「暂停申购」的产品在分配页不会被推荐。黄金在华夏黄金ETF 518850 与博时黄金ETF 159937 之间二选一，默认 518850。场内 ETF 需开券商账户（东方财富）：ETF 佣金按万分之 2.5（正在申请下调，若下调改这里），最低 5 元未确认，先按「收最低 5 元」保守处理。</small>
+          <small class="rule-note">「能不能买」（正常 / 限购 / 暂停申购 / 溢价过高）由你在资产卡片里手动更新；标记为「暂停申购」的产品在分配页不会被推荐，本月额度进等候罐。资产「状态」里的「手动暂停」同口径处理，额度一样进等候罐、不分给其他产品。「套用 v8.2 配置」只更新比例 / 层级 / 代码 / 费率 / 罐子归属，你标的「能不能买」和「手动暂停」都会保留。黄金在华夏黄金ETF 518850 与博时黄金ETF 159937 之间二选一，默认 518850。场内 ETF 需开券商账户（东方财富）：ETF 佣金按万分之 2.5（正在申请下调，若下调改这里），最低 5 元未确认，先按「收最低 5 元」保守处理。</small>
           </div>
 
           <h3 class="rule-section-title">溢价分级说明（QDII，四档）</h3>
@@ -424,6 +424,8 @@
         <details class="rule-section">
           <summary>更新说明</summary>
           <div class="rule-grid">
+          <article><b>v8.2 · 暂停</b><span>资产「状态」设为「手动暂停」的产品，本月额度改入等候罐，和「暂停申购」同一条逻辑，不再分给其他产品。「套用配置」只更新比例 / 层级 / 代码 / 费率 / 罐子归属，你标的「能不能买」和「手动暂停」状态保留。</span></article>
+          <article><b>v8.2 · 仓库</b><span>.gitignore 里「使用说明.md」一行已删除（对已被 git 跟踪的文件本来就不生效）。</span></article>
           <article><b>v8.1 · 修正</b><span>修外派阶段「美元一分不投、钱凭空消失」的分配 bug（改为先用美元、人民币补剩下的，并加资金守恒校验）；修剪提醒只在每年 1 月给买卖建议，其余月份只用新增资金纠偏；黄金 10% 上限落到代码（从产品表 cap 读）；QDII 溢价分级合并为四档（&lt; 2% / 2～3% / 3～5% / &gt; 5%）。</span></article>
           <article><b>v8.1 · FIRE</b><span>删掉 6 个不起作用的输入（最低线实际收益率、每月定投、美元补贴 / 汇率 / 在国外天数、FIRE 页读书基金比例）；三条线固定 4% / 3.5% / 3%，进度条与预计达成日期统一按 3.5% 稳健线；剩余 13 个参数落盘到 settings.fire，刷新和换设备后不再回到默认值。</span></article>
           <article><b>v8.1 · 清理</b><span>规则页去掉 4 条与别处重复的条目（参考资料里的两条、应急罐两条合一、投机硬规则并入纳指100）；旧的 buffered「暂存重定向」并入「能不能买 = 暂停申购」；删掉没有引用的费率表；首次引导第 1 步改为在应急罐里填金额。</span></article>
@@ -615,11 +617,11 @@
     </form>
   </dialog>
 
-  <script src="./sync.js?v=8-1"></script>
+  <script src="./sync.js?v=8-2"></script>
   <script>
     // Cloudflare Workers 云同步（替换原 Supabase，不会因不活跃而暂停）
     supabase.setConfig("/api/sync");
   </script>
-  <script src="./app.js?v=8-1"></script>
+  <script src="./app.js?v=8-2"></script>
 </body>
 </html>
